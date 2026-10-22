@@ -482,6 +482,36 @@ window.__ModuleLoader__.load({
       return updateGroups(prefs, workspaceId, [...groups, group]);
     }
 
+    function createGroupAt(prefs, workspaceId, sessionIds, makeName, anchorSessionId, topItems) {
+      const groups = prefs.groups[workspaceId] ?? [];
+      const group = {
+        id: newGroupId(),
+        name: makeName(groups.length),
+        color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
+        collapsed: false,
+        sessionIds: [...new Set(sessionIds)],
+      };
+      let next = updateGroups(prefs, workspaceId, [...groups, group]);
+      if (!Array.isArray(topItems) || topItems.length === 0) return next;
+      const anchorKey = topKeyOfSession(anchorSessionId);
+      const memberKeys = new Set(group.sessionIds.map((sessionId) => topKeyOfSession(sessionId)));
+      const groupKey = topKeyOfGroup(group.id);
+      const order = [];
+      let inserted = false;
+      for (const item of topItems) {
+        if (item.key === anchorKey) {
+          order.push(groupKey);
+          inserted = true;
+          continue;
+        }
+        if (memberKeys.has(item.key)) continue;
+        order.push(item.key);
+      }
+      if (!inserted) order.push(groupKey);
+      next = setTopOrder(next, workspaceId, order);
+      return next;
+    }
+
     function insertIntoGroup(prefs, workspaceId, groupId, sessionId, anchorId, position) {
       const groups = prefs.groups[workspaceId];
       if (!Array.isArray(groups)) return prefs;
@@ -792,6 +822,7 @@ window.__ModuleLoader__.load({
       .dsg-group{display:flex;flex-direction:column;gap:1px;margin:2px 2px 0 24px}
       .dsg-groupHeader{display:flex;align-items:center;gap:6px;height:30px;box-sizing:border-box;padding:0 5px 0 6px;border-radius:7px;cursor:pointer;flex:none;color:var(--dsw-alias-label-primary);background:color-mix(in srgb, var(--dsg-group-color) 11%, transparent)}
       .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 18%, transparent)}
+      .dsg-groupHeader.selected{box-shadow:inset 0 0 0 1.5px var(--dsg-group-color)}
       .dsg-groupHeader:focus-visible{outline:2px solid var(--dsg-group-color);outline-offset:-2px}
       .dsg-groupDrop{outline:1.5px dashed var(--dsw-alias-state-business-primary);outline-offset:-1px;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent)!important}
       .dsg-groupHeader.dsg-groupDragging{opacity:.65}
@@ -1300,6 +1331,7 @@ window.__ModuleLoader__.load({
         group,
         count,
         collapsed,
+        selected,
         statuses,
         dropActive,
         dropTopPosition,
@@ -1330,6 +1362,7 @@ window.__ModuleLoader__.load({
       const classes = ['dsg-groupHeader'];
       if (dropActive) classes.push('dsg-groupDrop');
       if (dragging) classes.push('dsg-groupDragging');
+      if (selected) classes.push('selected');
       if (dropTopPosition === 'before') classes.push('dsg-dropTopBefore');
       if (dropTopPosition === 'after') classes.push('dsg-dropTopAfter');
       return h(
@@ -1342,6 +1375,7 @@ window.__ModuleLoader__.load({
           'data-group-id': group.id,
           'aria-label': tr('group.aria', { name: group.name }),
           'aria-expanded': !collapsed,
+          'aria-current': selected ? 'true' : undefined,
           style: { '--dsg-group-color': group.color },
           onClick: onToggle,
           onKeyDown: (event) => {
@@ -2461,10 +2495,19 @@ window.__ModuleLoader__.load({
           return;
         }
         if (zone === 'group') {
+          const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+          const topItems = query ? null : section?.topItems;
           setPrefs((previous) => {
             const removed = removeSessionFromGroups(previous, workspaceId, sourceId);
             const members = [targetSessionId, sourceId];
-            return createGroup(removed, workspaceId, members, (index) => tr('group.defaultName', { n: index + 1 }));
+            return createGroupAt(
+              removed,
+              workspaceId,
+              members,
+              (index) => tr('group.defaultName', { n: index + 1 }),
+              targetSessionId,
+              topItems,
+            );
           });
           notify(tr('notice.grouped'));
           return;
@@ -2832,9 +2875,18 @@ window.__ModuleLoader__.load({
 
       const handleCreateGroupForSession = (workspaceId, sessionId) => {
         closeMenu();
+        const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+        const topItems = query ? null : section?.topItems;
         setPrefs((previous) => {
           const removed = removeSessionFromGroups(previous, workspaceId, sessionId);
-          return createGroup(removed, workspaceId, [sessionId], (index) => tr('group.defaultName', { n: index + 1 }));
+          return createGroupAt(
+            removed,
+            workspaceId,
+            [sessionId],
+            (index) => tr('group.defaultName', { n: index + 1 }),
+            sessionId,
+            topItems,
+          );
         });
         notify(tr('notice.grouped'));
       };
@@ -3045,6 +3097,10 @@ window.__ModuleLoader__.load({
           : null;
         const dragging = dragInfo?.kind === 'group' && dragInfo.groupId === group.id;
         const collapsed = group.collapsed && !query;
+        const selected = collapsed
+          && activePanelId === null
+          && currentSessionId !== null
+          && members.includes(currentSessionId);
         const collapsedStatuses = [];
         if (collapsed) {
           const buckets = new Map();
@@ -3072,6 +3128,7 @@ window.__ModuleLoader__.load({
             group,
             count: members.length,
             collapsed,
+            selected,
             statuses: collapsedStatuses,
             dropActive,
             dropTopPosition,
