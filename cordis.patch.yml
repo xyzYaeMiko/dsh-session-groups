@@ -1,0 +1,8 @@
+# session-groups bundle patch.
+#
+# One Host row; the browser half registers a replacement occupant for the
+# sidebar's `sidebar.workspaces` single slot and keeps groups browser-local.
+
+- insert:
+    - id: session-groups
+      name: dsh-session-groups
