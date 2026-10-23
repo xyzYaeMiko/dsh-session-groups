@@ -30,6 +30,109 @@ window.__ModuleLoader__.load({
       '#8a8f98',
     ];
 
+    // Generated from pypinyin: first-letter table for CJK Unified Ideographs (U+4E00..U+9FFF).
+    const PINYIN_BASIC_INITIALS = [
+      'ydkqsxhwzssxjbymgcczqpssqbycdscdqldylybsgjgyqzjjfgcclzzbwdwzjljpfyynwjjtmyyzwzhflyppqhgccyyymjqyxxgjxhsdsjnjjsmhmlzrxyfsngsyczqzggllyjlmyzssecykyyhqwjssggyxyqyjtwkdjhychmyxjtlxjyqbyxdldwrrjjwysrldzjpcbzjjbrcfslbczstzfxxthtrqggbdlyccscymmrfcyqzpwwjjyfcrwfdfzqpyddwyxkyjawjffxjpdftzyhhycyswccyqsclcxxwzzxnbgnnxbxlzsqcbsgpysyzdhmdzbqbzcwdzzyytzhbtsyyfzgntnxqywqskbphhlxgybfmjebjhhgqtjcysxstkzglyckglysmz',
+      'xyalmeldccxgzyrcxsdltjzcqkcnnjwhjczzcqljststbnxbtyxceqxgkwjyflzqlyhjqspsfxlfpbyqxxxydcczylllsjxfhjxpjbcffyabyxbhczbjyclwlczggbtssmdtjcxpthyqtgjjscjfzkjzjqnlzwlslhdzbwjncjzyzsqnycqyrzcjjwybrtwpyftwexcskdzctbxhyzcyyjxzcfbzzmjyxxcdczottbzljwfcgszsxfyrlnyjmbdthjxsqjccsbxyytsyfbjdztgbcnclcyzzbsacyzzscjcshzqydxlbpjllmqxtydzxsqjtzpxlcglqccwjbhctdjjsfxjejjtlbgxsxjmyjjqpfzasyjncydjxkjcdjszcbartcclnjqmwnqnc',
+      'lllkbybzzsyhqcltwlccrshllzntylnewyzyxczxxgdkdmtcedejtsyys?dqdfmsd?jlhrwnqlybglxhlgtgxbqjdzfyjsjyjcjmrnymgrcjczgjmzmgxmmryxkjnymsgmzjymklfxmbdtgfbhcjhkylpfmdxlqjjsmtqgzsjlqdldgjycalcmzcsdjllnxdjffffjczfmzffpfkhkgdpqxktacjdhhzdddrrcfqyjkqccwjdxhwjlyllzgcfcqdsmlzpbjjplsbcjggdckkdezsqsckjgcgkdjtjllzycxklqscgjcltfpcqczgwbjdqsdjjbyjhsjddwgfsjgdkccctllpspkjgqjhzzljplgjgjjthjjyjzcjmlzlyqbgjwmljkxzdznjqsyz',
+      'mljlljkywxmkjlhskjgbmclyymkxjqlbmclkmdxxkwyxwslmlpsjqjcqxyjfjtjdxmxxllcrqbsyjbgwywxggbcyxpjtgpepfgdjgbhbnsfjyzjkjkhxqfgqzkfhygkhdgllsdjjxpqykybnqsxqnszswhbsxwhxwbzzxdmndjbsbkbbzklylxgwxjjwaqzmywsjqlcjxxjqwjeqxscwetlzhlyyysdzpyqyzcptlshtzcfycyxyljsdcjjagyslcllyyysglrqqeldxzsccccadycjysfsgbfrsszqsbxjpsjwsdrckgjlgdkzjzbdktcsyqpyhstcldjlhmxmcgxyzhjdctmhltxzxylymohyjcltyfbqqjbfbdfehtksqhzywwcnxxcdwhhwg',
+      'yjlegmdqcwgfjhcsntwydolbygwqwesjpwnmlrydzsztxyqpzgcwxhngpyxshmdqjgztdppbfyhzhhjyfdzwkgkzbldntsxhqeegzxylzmmzyjzgszxkhkhtxexxgylyapsthxdwhzydpxagkydxbhnhxkdfjnmyhylpmgocslnzhkxxlbzzlbmlsfbhhgsgyyggbhscyajtxwlxtzqcwzydqdqmmgdqllszhlsjzwfjhqswscelqazynytlsxthaznkzzsdhlacxtwwcsgqqtddyzbcchyqzflxpslzygpzsznglydqcbdlxjtctajdkywnsyzljhhdzcwnyyzyomhychhhxhjkzwsxhdnxlyscqydpclyzwmypbkxyjlkzhtyhaxqsyshxasmc',
+      'hkdscrswjpwqsgzjlwwschs?hsqnhzsngndaqtbaalzzmsstdqjcjktscjaxplggxhhgoxzcxpdmmhldgtybysjmxhmrcplxjzckzxshflqxccdhxezfchzccdytcjyxqhlxdhypjqxnlsyydzozjnyxqezysjyayjkypdghddxsppyzndlthrhxydpcjjhtcxmctlhbynyhmhzllhnxmylllmdcppxhmxdkycyrdltxjchhznxclcclylnzsxzjzzlnnllwhyqsnjhxynttdkyjpychhyegkcttwlgqrlggtgtygyhpyhylqyqgcwyqkpyyyttttlhyhlltyttsplkyzwgywgpydqqzzdqxskcqnmjjzzbxyqmjrtfbbtkhzkbjdjjkdjjtlbwf',
+      'zpbtkqtztgpdgntpjyfalqmkgxbcclzfhzclllladpmxdjhlcclgyhdzfgyddgcyyfgydxkssebdhykdkdkhnaxxybfbyyhxcqgabfqyjjdmljcsjzllpchbsxgjyndybyqspqwjlzkcddtaccbkzdyzypjzqsjnkktknjdjgyepgtlfyqkasdntcyhblgdzhbbydmjrygkzyheyybcmcdtyfzjjhgcjplxhldwxjjkytcyksssmtwcttqzlzbszdtwzxgzagyktywxlhlcpbclloqmmzsslcmbjcszzkydczxgqjdsmcytzqqlwzqzxssbpkdfqmddzdsddtdmfhtdyzjaqjqkypbdjyyxtljhdrqxxxhaydhrjlklytwhllrllrcxylbwsrszz',
+      'symkzzhhkyhxksmzsyzgcjfbzbsqlfcxxxnxkxwymsddyqwggqmmyhcdzttfgyyhgstttybykjdhkyjbelhdypjqnfxfdqkzhqkzbyjtzbxhfdxbdaswhawajldyjsfhbldnndnqjtjnchxfjsrfwhzfmdrfjyhwzpdjkzyjymfcyznynxfbytfwfwygdbnzzzdnytxzemmqbsqehxfzmbmflzzsrsymjgsxwzjsprydjsjgxhjjgljjynzjjxhgjkymlpeyycsysgqzswhwlyrjlpxslcxmfsmwkcctnxnynpnjszhdzeptxmwywayysywlxjqzqxzdclaeelmcpjpclwbxsqhfwrtffjtnqjhjqdxhwlbyccfjlalkyyjldxhhycstdywncjtx',
+      'ywdrmdrqhwqcmfjdyzmhmayxjwmyzqsxtlmrspwwchajbxtgcypxyyrrclmpamgkqjszyjrmyjsnxtplnbappypylxmyzkynldgyjzczhnlmzhhanqmpgwqtzmxxmllhgdzxyhxkrxycjmffxyhjfsbssqlhxndycannmtcjcyprrnytyqnyymbmsxndlylysljnlqyshqmllyzlzjjjkymzcsfbzxxmstbjgnxyzhlsnmcqscyznfzlxbrnnnylmnrtgzqysatswryhyjzmzdhzgzdwybsscskxsyhytsxgcqgxzzbhyxjscrhmkkbsczjyjymkqhzjfnbhmqhysnjnzybknqmcjgqhwlsnzswxkhljhyybqcbfcdsxdldspfzfskjjzwzxsddx',
+      'jseeegjscssmgclxxkywyllymwwwgydkzjgggtggsycknjwnjpcxbjjtqtjwdsspjxzxnzxwmelptfsxtllxcljxjjljsxctnswxlehhlyqrwhsycsqrybyaywjejqfwqcqqcjqgxaldbzzyjgkgxpltqyfxjltpadkyqhpmatlcpdhkxmtxybhblefxdleegqdymsawhzmljtwyqxlyjzljeeyxbqqffnlyxrdsctgjgxyylkllxqkcctlhjlqmkkzgcyygllljdzgydhzwxpysjbzkdzgyzzhywyfqytyzszyezklymhjjhtsmqwyzlkyywzcsrkqyqltdxwcdrjklwsqzwbdcqyncjsrszjlkcdcdtlzzzacqqczddxyplxcbqjylzllljddz',
+      'jgyjyjzyxnyyynxjxkxdazwyrdljyyyrjlglldrxjcykywnqcclddnyyykyckczhjxcclgzqjgjwppcqqjysbzzxyjxjbxjfzbsbdsfnsfpzxhdwztdmpptblzzbzdmyypqjrsdzsqzsqxbdgcpzswdwcsqzgmdhzxmwwfybpdgphtmjthzsmmbgzmbzjcfzhfcbbzmqcfmbcmcjxlgpnjbbxgyhyyjgptzgzmqbqdcgybjxlwzkydpdymgcftpfxyztzxdzxtgkmtybbclbjaskytssqyymscxfjeglsllszbqjjjaklyldlycctsxmcwfgkkbqxlllljyxtyltyxytdpjhnhgnkbyqnfjyyzbyyessessgdyhfhwtcjbsdzjtfdmxhcnjzymqw',
+      'srxjdzjqpdqbbsdjggfbkjbxdgjhmgwjjjgdllthzhhyyyyyysxwtyyyccbdbpypzyccztjpzywcbdlfwzcwjdxxhyhlhwczxjtczlcdpxdjczczlyxjjsjbhfxwpywxzptdzzbdccjhjhmlxbqxxbylrddgjrrctttgqsczwmxfytmwzcwjwxjywcskybzqccttqnhxnkxxkhkfhtswoccjybcmpzzyjbnnzpbthhjdlscddytyfjpxyngfxbyqxcbhxcbsxtyzdmzysnxsxlhkmzxlthdhkghxjsshqyhhcjyxglhzxcsnhekdtgqxqypkdhextykcnymyyypkqyytjxzlthhqtbyqhxbmyhsqckwwyllhcyylnneqxqwmcfbdccmljggxdqkt',
+      'lxkgnqcdgzjwyjjlyhhqtttnwchhxcxwheszjydjccdbqcdgdnyxzdhcqrxcbmztqcbxwgqwyybxhmbymykdyecmqkyaqyngyzslfykkqgyssqyshjgjcnxkzycxsbkyxhyylstycxqthysmgscpmmgcccccmtztasmgqzjhklosqylswtmqsyqkdzljqqyplcycztcqqpbbqjzclpkhqcyyxxdtdddsjcxffllchqxmjlwcjcxtspycxndtjshjwxdqqjckxyamylsjhmlalykxcyydmamdqmlmcznnyybzkkyflmchcmlhxrcjjhsylnmtjggzgywjxsrxcwjgjqhqzdqjdzjjzkjkgdzqgjjyjylhzxxcdqhhhestmhlfsbdjsyyshfyssczq',
+      'lpbdrfrztzdkykgsctgkwdqzrkmsynbcrxqbjyfaxpzzedzcjykbcjwhyjbqdzywnyszptdkzpfpbaztklqyhbbzpnbptyzzybhnydcpjmmcycqmcjfzzdcmnlfpbplngqjtbttajzpzbbdnjkljqylnbzqhksjznggqsczkyxchpzsnbcgzkddzqanzgjkdntlzldwjljzlywtxndjzjhxyatncbgtzcsskmnjpjytsrwxcfjwjjtkhtzplbhsnjzsyjbwbzyzlstlsbjhdwwqpslmmfbjdwajyzccjtbnnrzwqxcdslqgdsdpdzhjtqqpsqlyyjzlgyhszlctcbjtktyczjtqkbpjlgmjzdmcsgpynjzjjyyknhrpwszxmtncszzyxybyhyzax',
+      'ywkcjtllckjjtjhgcxdxyqyczbywblwqcglzgjgqrqcczssbcrbcskydznljsqgxssjmecnstztpbdlthzwhqwqtzexnqczgweskssbybstscsjccgbfsdqszlccglllzghzcthcnmjgyzaznmckcstjmmzckbjygqljyjppldxrgzyxccsnhshgdznlzhzjjcddcbcjflbfqbczzwpqdnhxljcthqwjgylnlszzpcjdscqqhjqkdxkpbajyemsmjtzdxlcjyryynwjbngzzkmjxltbsllrtpylcsznxjhllhyllqqzqlxymrcwcxsljmczltzldwdjjllnzggqxppskygyggbfzpdkmwghcxmcgdxjmcjsdycabxjdlnbcddygskydjtxdjjyxm',
+      'saqazdzfslqxyjsjzylblxxwxqqzbjzlfbblylwdsljhxjyzjwtdjcyfqzqzzdcsxzzqlzcdzfchyspympqzmlpplffxjjnzzylsjyyqzfpfzksywjjjhrdjzzxtxxglghtdxcskyswmmtcwybazbjkshfhgcxmhfqhyxxyzftsjyzbxyxpzlchmzmbxhzzssyfdmncwdabazlxktcshhxkxjjzjsthygxsxyyhhhjwxkzxcsbzzwwhhcwtzzzpjxsnxqqjgzyzawllcwxzfxgyxyhxmkyyswsqmnjnaycyspmjkgwcqhylajjmzxhmmcnzhbhxclxtjpltxyjhdyylttxfszhyxxsjbjyayrsmxyplckdlyhlxrlnllstyzyyqygyhhsccsmcct',
+      'zcxhyqfpyyrpfflfqtntszllzmhwtcjqyzwtllmlmdwmbzssmzrbpdddlgjjbxccsrzqqygwcsxfwzlxccrbtdzmcyggdlqsgtjmwljmymmsyhfbjdgyxccpshxczcsbsjwjgjmpbwaffyfnxhydxzylremzgzcyhsszdlljcsqfzxxkptxzgxjjgbmyyysnbdylbnlhbfzdcyfbmgqrrmsszxysgtznnydzzcdgbjafjbdknzblcsscpsgzycjszlmlrzzbzzldlsllysxsqzqlyxzlsgkbrxbrbzcycxzjzeeyfgklzlyyhgysgzlfjhgtgwkraajyzkzqtsshjjxdzyz?yjlzyrzdqqhgjzxsszbtkjpbfrtjxllfqwjgslqtymblpzdxtzag',
+      'bdhzzrbgjhwnjtjxlhscfsmwlldqysjtxkzscfwjlbxftzlljzllqblcqmqqcgcdfpbbhzczjlpyygjdtgwdcfczqyyyqysrclqzfklzzzgffsqnwglhjycjjczlqzcyjbjzzbpdccmhjgxdqdgdlzqmfgpsytsdyfwwdjzjysxyycjcyhzwpbyhxrylybhkjksfxtzjmmchhlltnyymsxxyzpyjjycdyzwmtjjkqyrhllqxpsgtlwycljscbxjyzfnmlrgjjtyzbsyzmsjyjhgfzqmsyxrszcwtlrtqzsstkxgqggsptgcdnjsgcqcqhmxggztqydjkzdlbzsxjlhyqgggthqscpyhjhhgnygkggcmjdzllcclxqsftgzslllmlcskctbljzzsz',
+      'mmnytpzsxqhjcjyqxyexzqzcpshkzzysxcdfgmwqrllqxrfztlysdctmjcsjjdhjnxtnrztzfqrhqgllgcxszsjdjljcytsjtlnyxhszxcgjzyqpylfhdjsbpcczgjjjqzjqdybssllcmyttmqtbhjqnnygkynqyqmzgcjkpdcgmyzhqllsllclmholzgdylfzsljcqzlylzcjeshnylljxgjxlyjyyyxnbcljsswcqqcjyllcldjyllzllbnylgqchxyyqoxccqkyjxxhyklksxayqccqkkkkcsgyxxyqxygwtjohthxpxxcsshcyeychzzcbwqbbwjqcscszsslzylgdesjzmmymcytsdsxxscjpqqsqylyfzychdjdzywcbtjsydjhcyddjlb',
+      'djjsodzyqysqkxxdhhgqjyohdyxwgmmmajdybbbppbcmhcpljzsmtxerxjmhqdstpjdcbssmsssthjtslmmtrcplzszmlqdsdmjmqpnqdxcfynbfsdqqyxhyaykqyddlqyyysszbydslntfgtzqbzmchdhczcwfdxtmqqsphqwwxsrgjcwtjtzzqmgwjjrjhtqjbbgwzfxjhnqfxxqywyyhyscdydhhqmnmdmmcpbszppzzglmzfollcfwhmmsjzttthlmyffytzzgzyskjjxqyjzqphmbzzlyghgfmshpcfzsnclpbqsnjszslxjfpmtyjygbxlldlxpzjypjyhhzcywhjylsjexfsszywxkzjlladtmlymqjpwxxhxsktqjezrpxxzghmhwqpw',
+      'qlyjjqjjzszcfhjlchhnxjlqwzjhbmzyxbdhhypylhlhlgfwlcfyytlhjjcjmscpxstkpnhjxsntyxxtestjctlsslstdlllwwyhdhrjzsfgxssyczykwhtdhwjslhtzdqdjzxxqggyltzphcsqfzlnjtclzpfstpdynylgmjllycqhynsbchylhqyqtmzybbywrfqykjsyslzdyjmpxyyssrhzjnyqtqdfzbwwdwwrxcwhgyhxmkmyyyhmsmzhngcepmlqqmtcwctmhmxjpjjhfxyyzsjzhtybmstsyjdtjjqytlhynbyqzlcxcnzwsmylkfjxlwgbypjytysylymzckttwlgsmzsylmpwlzwxwqzssaqsyxyrhssntsrapccpwcmgdhhxzdzxf',
+      'jhgzttsbjhgyglzysmyclllybtyxhbbzjkssdmalhhycfygmqypjycqxjllljgclzgqlycjcctotyxmtmshllwcgfxymzmklpszzzxhhjyslctyjcyhxsgyxzkxlzwpyjpdhjwpjpwsqqxlxxdhmrslzcyzwstcxkystzshbsccstplwsscjchjlcgchssphylhfhhxjsxyllnylmzdhzxylsxlwzyhcldyahzcmddyspjtqjzlngjfsjshctsdszlblmssmnyymjqbjhrcwtyydchqljapzwbgqybkfcmjwlzllyylszydwhxpsbcmljpscgbhxlqhyrljxyswxhxzlldfhlslymjljyflyjycdrjlfsyzfsllcqyqfgjyhyszlylmstdjcyhbz',
+      'llnwlxxygyyhbmgdhxxhhlzzjzxczzzcyqzfnjwpylcpkpykpmclgkdgxzggwqbdxzzkzfbxxlzxjtpjpttbytszzdwslchzhsltjxhqlhyxxxywzyswtmzkhlxzxzpyhgchkjfsyh?tjrlxfjxptztwhplyxfcrhxshxkjxxyhzjdxjwylhyhmjdbflkhtxcwhcfwjcfpqrxqxcyyyjygrpxgscsxngwchkzdxhflxxhjjbyzwtsxnncyjjymswzjqrmhxzwfqsylzjzgbhynslbgttcsebhxxwxyhhxyxnsqyxmlywrgyqlxbbcljsylpsytjzyhyzawlhorjmksczjxxxyxchcytryxqjddsjfslyltsffyxlmtyjmjjyyyxltzcsxqzlhzxl',
+      'wyxzhdnlrxhxjcdyhlbrlmbrllaxksllljlyxxlycrylcjcgjcmtlzllcyzzpzpcyawhjjfybdyyzsepckzdqyqpbpcjpdcyzbdbbcyydycnnpjmtmlrmfmmgwygbsjgygsmdqqqztxmkqwgxllpjgzbqcdjjjfpkjkcxbljmswmdtqjxldlppbxcwkcqqbfqjczagzgmykbhyyhzykndkzmbpjyspxthlfpnyygxjdbkxnhhjhzjxstrstldxskzysybmxjlxyslbzyslhxjpfxbqnbylljqkygzmcyzzymccsldlhzgwfwyxzmwcxtynxjhbyymcysbmhysmydyshqyzchmjjmzcaahcbjbbhplxtylsxsdjgjdhkxxtxxnbhnmlngsltxmrhn',
+      'lxqjxmzllyswqgdlbjhdcgjyqycmhwfwjybbbyjmjwjmdpwhxqldyapdfxxbcgjspckrssyzjmslbzzjfljjjlgxzgyxyxlszqyxbexyxhgcxbpldyhwecdwwcjmbtxchxyqxllxflyxlljlssfwdpzsmyjclmswtczbchqekcqbwlcgydblqppqzqfjqdjhymmcxtxdrmjwrhxcjzclqxdyynhyyhrslsrsywwzjymtltllgzqcjzyabsckzcjyccqljsqxalmzyyywlwdxzxqdllqshgpjfjljhjabcqzdjgthhsstcyjlbswzlxzxrwgldlzrlzqtgsllllzlymxqgdzhgbdbhzpbrlw?xqbpfdwo??whlypcbjcc?dmbzpbzz?cyqxldomzb',
+      'lzwpdwyygdstthcsqsccrsssyslfybfntyjszdfndpthtzzmbblxlcmyffgtjjqwftmdpjwdnlbzcmmctgbdzlqlpyfhsymjylsdchdzjwjcctljcldtljjcpddpjdsszynndbjlggjzxsxnlycybjjqxcbylzcfzppgkcxzdzfztjjfjsjxzbnzyjqttyjwhtyczhymdjxttmpxsflzcdwslshxybzgtfmlcjtacbbmgdewycyzcdszcyhflyctygwhkjyylsjcxgywjcbhlcsnddbtzbsclyzczzssqdllmqyyhfllqllxfdyhabxggnywyypllsdldllbjcyxjzmlhljdxyyqytdlllbbgbfdfbbqjzzmdpjhgclgmjjpgaehhbwcqxaxhhhz',
+      'chxyphjaxhlphjpgpzjqcqzgjjzzgzdmqyybzzphyhybwhazyjhykfgdpfqsdlzmljxjpgalxzdaglmdgxmwzqytxdxxpfdmmssympfmdmmkxksyzyshdzkjsysmmzzzmsydnzzczxbmlstmddnmxckjmztyymzmzzmsshhdccjemxxkljstgwlsqlyjzllsjssdbpmhnlyjczyhmxxhgzcjmdhxtkgrmxfwmckmwkdcksxqmmmfzzydkmsclcmpcgmwrpxqpzdsslcxkyxtmlgjyahzjgzqmcsnxyhmmpmlkjxmhlmlgmxctkzmjjyszjsyszhsyjzjcdajzybsdqjzgwzkgxfkdmsdjlfmehkzqkjbeypzyszcdwyjffmzjykttdzzefmzlbnp',
+      'plplpbpszalltylkckqzkgenqlwagxxydpxlhsxqqwqykxqclhyxxmlyccwlymqyskychlcjnszkpyzkcqzqljbdmdjhlasqlbydwqlwdnbqcrydddtjybkbwszdxdtnpjdtctqdfxqqmgnseclstbhpwslctxxlpwydzklzygzcqapllkccylbqmqczqcljslqzdjxldthpzqdljjxzqdjyzhkzljcyqdyjppypeakjyrmpcbymcxkllzllfqpylllmbsglcysslrsysqtmxyxqqzbdzrysyztffmzzsmzqhzssccmlyxwtpzgxzjgzgsjsgkddhtqggzllbjdzlcbzhyxyzhzfywxyzymsdbzzyjgtsmtfxqyxjscdgslnmdlrytzlryylxqht',
+      'xsrtzcgyxbnqqzfhykmzjbzymkbpnlyzpblmcnqyzzzsjzhjctzhhyzzjrdyzhnfxglfxslkgjtctssyllgzrzbbjzzklpkbczyslxyxbjfpnjzzxcdwxzyjxzzdjjgggrsrjkmcmzjlsjywqshyhqjsxpjzzzlsnshrnypjtwchklbsrzlcxwjqxqkysjycztlqzybbybwzjqdwgyzcytjcjxckcwdkkzxsgkdzxwwyyjqyytcytdjlxwkczkklcclzcqqdzlqlcsfqchqhsfsmqzzllbjjzbsjhtsjdysjqjpdlzcdcwjkjzzlpycgmzwdjjbsjqzsyzyhhxcbbjydssddzncglqmbtsfcbfdzdlznfgfjgfsmptjqlmblgqcyyxbqkdxjqsrf',
+      'kztjdhczklbsdzcfytplljgjhtxzcsszzxstcygkgckgyoqxjplzbbbgtgyjdgczqszlbjlsjfzgkqqjcgyczbzqtldxrjxbsxxpzxhyzyclwdsjjhxmfczpfzhqhqmqgkslyhtycgfrzgnqxclpdlbzcsczqlljblhbdcypczppdymtzsgyhckcpzjgslclnscdsldzxbmsdlddfjmkdjdhslzxlszqpqpgjllybdszgqlbzlslkyyhzttncjyqtzzfszqztlljtyyllqllqyzqlbdzlslyyzymdfszsnhlxznczqzbbwskrfbcyzmthblgjpmczzcstlxshtzcyzlzblfeqhlxflcjlyljqcbzlzjghsstbrmhxzhjzclxfnbgxgtqjcztmsfz',
+      'kjmssnxljkbhszxntnlzdntlmsjxgzjyjczxyhyhwrwwqnztnfjscpzshzjfyrdjsfscjzbjfzqzchzlxfxsbzqlzsgyftzdcszxzjbqmszkjrhxjzcgbjkhchgtjkjqglxbxfgdrtylxjxgdtsjxhjzjjcmzlcqsbtxhqgxttxhxftsdkfjhzyjfjxrzcdlllcqsqqzqwqxswqtwgwbzcgcllqzbclmqqtzgzxzxljfrmyzflxysqxxjkxrmjdcdmmyxbsqbhgcmwfwtgmxlzbyytgzyccdxyzxswgxyjyznbgpzjcqsyxcxrtfycgrhztxszzthcbfclsyxzljqmzlmplmxzjssflbysmyqhxjsxrxsqzzzsslyflczjrcrxhhzxqydshxsjjh',
+      'zcxjbdynsysxjbqlpxzqpymlxzkyxlxcjlcycrxzzlldlllsjyhzxgyjwkjrwyhcpsgnrzlfzwfzznsxgxflzsxzzzbfcsyjdbrjkrdhhgxjljjtgxjxxstjtjxlyxqfcsgswmsbctlqzzwlzzkxjmltmjyhsddbxgzhdlbmyjfrzfcgclyjbpmlysmsxlszjqqhjzfxgfqfqbpxzgyyqxgztcqwyltlgwwgwhllfsfgzjmgmgbgtjfsyzzgzyzaflsspmlbflcwbjzcljjmzlpjjlymqdmyyyfbgygqzglyzdxqyxrqqqhsxyyqqygjtyxfsfsllgnqcygycwfhcccfxbylypllzqxxxxxkqhhxshjdcfdsczjxcpzwhhhhhapylhalpqafyhxd',
+      'yllkmzqgggddesrnndltzgchybpysqjjhclljtolnjpzljlhymheydydsqycddhgzpndzclzywllznteytgxlhslpjjbdgwxpcdntjcklkclwkllcasstknzdnqnttlyyzssysszzryljqkcgbhhcrxrzydgrgcwcgzhfffppjfzynakrgywyqpqxxfkjtszzxswzddfbbqtbgtzfznpzfpzxzpjszbmqhkcyxyldkljnypkyghgdcjxxeahpnzgctzcmxcxmmjxnkszqnmnlwbwwxjjyhclstmcsqdjcxxtpcnpdtnnpglllzcjlspblplkcdtnjnlyyrscffjfqwdpgzdwmnzcclodaxnssnyzrestyjwjyjdbcfxnmwttbqlwstszgybljpxg',
+      'lboclgpcbjftmxzljylzxcltpnclcgxtfzjshcrxsfyszdkntlbyjcyjllstgqcbxnwzxbxklylhzlqzlnzcqwgzlgzjncjgcmnzzgjdzxtzjxycyycxxjyyxjjxsssjstssttppghtcsxwzdcsyfptfbchfbblzjclzzdbxgcxlqpxkfzflsyltywbmnjhskbmddbcysccldxycddqlyjjhmqllcsgljjsyfpyyccyltjantjjpwycmmgqyysqdhqmzhszxpftwwzqswqrfkjlxjqqyfbrxjhhfwjgzyqacmyfrhcyybyqwlpexcczstyrltsdmqlykmbbgmyyjprknnbbsxyxbhyzdjdnghpmfsgbwfzmfjmmbcmzzcjjlcnyxyqgmlrygqccy',
+      'hzlwjgcjcggmcjjfyzzjhycfrrcmtzqzxhfqgdjxccjeaqcrjthpljlszdjrbcqhjdzrhxlyxjsymhzydwldfryhbbydtssccwbxglpzmlzztqsscpjmmxjcsjytycghycjwsnsxlfemwjnmkllswtxhyyygcmmcwjdqdjzglljwjnkhpzggflccsczmcbltbhbqjxqdjpdjqtghglfqawbzyjjltstdhqhctcbchflqmpwdshyytqwcnztjtlbypbpdyyyxsqkxwyyflxxncwcxybmaelykkjmzzzbrxyaqjfljpfhhhytzzxrgqqmhspgdzjwbwpjhzjdyscqwzkthxsqlzyymysdzgrxckkhjlwpysyscsyzlrmlqsyljxbcxtlhdqzpcycyk',
+      'pppnsxfyzjjrcemhszmsxlxglrwgcstlrsxbygbzgztcpldjlslylymdtmtcpalcxpqjcjwtcyyzlblxbzlqmyljbghdslssdmxmbdczsxwhamlczcpjmcnhjyjnsygchskqmzzqdllkablwjqsfmocdxjrrlyqchjmybyqlrhetfjzfrfksryxfjdwdsxxlwsqjyslyxwjhsnlxyyxhbhawhhjcxwmyljcsqlkydttxbzsxfdxgxsjhhsxxybssxdpwncmrptjzczenygcxqfjxkjbdmljcmqqxloxslyxxlylljdzbtymhbfsttqqwlhogyblscalzxqlhtwrrqhlstmypyxjjxmqsjpnbryxyjllyqylthylqyfmhkljdmllhfzwkzhljmlhl',
+      'jkljstlqxylmbhhlnlsxqchxcfxxlhyhjjgbyzzkbxscqdjqdsxjzsyhzhhmgsxcsymxfebcqwwrbpyyjqtyqcyjhqqzyhmwffhgzfrjfcdbxndqyzpcyhhjlfrzgppxzdbbgzqstlgdgylcqmgchhmfywlzyxkjlypqhsywmqqgqzmlzjnsqxjqsyjtcbehsxfssfxzwfllbcyyjdytdthwzsfjmqqyjlmqsxlldttkhhybfpwdyysqqrnqwlgwdebdwcyygcdlkjxtmxmyjsxhybrwfymwfrxyqmxysctzztfykmldhqdlwyqnlcryjblpsxcxywlsbrrjwxhqybhtydnhhgmmywytzcsqmtssccdalwztcpqpyjllqzyjswxwzzmmglmxclmx',
+      'czmxmzsqtzppjqblpgxjzhfljjhycjsnxwcxsccdlxsyjdcqcxslqyclzxlzzxmxqrjmhrhzjphmfljlmlclqnldxzlllfypngjysxcqqdcmqjzzxhnpnxzmekmxxykyqlxsxtxjxyhwdcwdzhqyybgybcyscfgfsjnzdyzzjzxrzrqjjymcanhrjtldbpyzbstjhxxzypbdwfgzzrpymtngxzqbyxmbbfcckrjjjbjegrzgyclkxzdxkknsjkcljspgyyzlqqjybzssqlllkjfcbktylcccdblsppfylgydtzjyqggkqttfcxbdkdxxhybbfytyhbclpdytgdhryrnjsbtcsnyjqhklllzslydxxwbcjqsbxbfjzjcjdzfbxxbrmlazgcsnclbj',
+      'dstblfrzdswsbxbcllxxlzdjzsjpylyxxyftfffbhjjjgbygjpmmmmsscljmtlyzjxswxtyledqpjmygqzjgdjlqjwjqllsdgjgygmscljjxdtygjqjqjcjzcjgdzdshqgsjggcjhqxsnjlzzbxhsgzxcxyljxyxyydfqqjhjfxdhctxjyrxysqtjxyefyyssyxjxncyzxfxcsyszxyyschshxzzzgzzzgfjdldylnpzgyjyzyyqzpbxqbdztzczyxxyhhscxshcggqhjhgxwsztmzmehyxgebtylzkkwytjzrclekestdbcykqqsayxcjxwwgsbhjszsdhcsjkqcxswxfctynydpzcczjqtzwjqdzzzqzljchlsbhpydxpsxshhezdxfptjqyzz',
+      'xhyaxncfzyyhxgnqmywxtzsjpkhhgymxmxqcxtsbcqsjyxhtyylybcqlmmszmjzjllcogxzaajzyhjmchhcxzsxzdznleyjjzjbhzwzzsqtzpsxztdsxjjjznyazphhyysrnqdthzhayjyjhdzxzlswclybzyecwcycrylcxnhzydzydyjdfrjjhtrsqtxyxjrjhojynxelxsfsfjzghpzsxzszdzcqzbyyklsgsjhczshdgqgxyzgxchxzjwyqwgyhksseqzzndzfkwyssdclzstsymcdhjxxyweyxczaydmpxmdsxybsqmjmzjmtzqlpjyqzcgqhxjhhhxxhlhdldjqsldwbsxfzzyyschtytyjbhecxhjkgjfxbhyzjfxbwhbdzfyzbcapnpg',
+      'nydmsxhkhhmamlnbyjtmpxyjmcthjbzyfcgtyhwphftgzzezsbzegpbmdskftycmhbllhgpzjxzjgzjyxzsbbqsczzlzccstpgxmjsftcczjzdjxcybzlfcjsyzfgszlybcwzzbyzdzypswyjgxzbdsysxlgzbzfygczxbzhzftpbgzgejbstgkdmfhyzzjhzllzzgjqzlsfdjsscbzgpdlfzfzszyzyzsygcxsntxchczxtzzljfzgqsqyxzjqccccdjcdxzjyqjccgxztdlgscxzsyjjqtcclqdqztqchqqjztezzzpbkkdjfcjfztybqyqttynlmbdktjcpqzjdzfpjsbnjlgyjdxjdzqkzgqkxclpzjtcjdqbxdjjjstcjnxbxcmslyjcqmt',
+      'jqwwcjjnjnlllhjcwqtbzqyczczpzzdzyddcyzdzccjgtjfzdprntctjdcqtqndtjnplzbcllctdsxkjzqdpzlbznbtjdcxfczdbccjjltqjpldcgzdbbzjcqdcjwynllzlzccdwllxwzlxrsntqjccxkjlsgdfqtddglrlajjtklymkqlldzytdyycygjwyxdxfrskstcdenqmrkqzhhqkdldazfkypbggpzrebzzykyzspegjjglkqzzzslysywyzwfqznlzzlzhwcgkypqgnpgblplrrjyxcccgyhsfzfwbzywtgzxyljczwhxzjzblfflgskhyjzeyjhlpllllcygxdrzelrhgklzzyhzlyqszzjzqljzflnbhgwlczcfjwspyxnlzlxgccp',
+      'zbllcxbbbbxbbcbbcrnncccyrbbsyldcgqyyqxygmqzwtzydyjhyfwdehzdjywlccntzyjjcdedpzdztstqjhdymbjnyjzlxtsstphndjxxbyxqtzqddtjtdyztgwscszqflshlglbcjbhdlyzjyckwtydylbnydsdsycctyszyyebgexhqddwnygyclxtdcystqmygzasccszzddlcclzrqxyyeljsbymxshztembbllyyllytdqyshymrqxkfkbfxnxsbychxbwjyhtqbpbsbwdzylkgzskyghqzjhhxjxgnljkzlyycdxlfwfghljgjybxblybxqpqgztzplncybxdjyqydymrbesjyyhkxxstmxrczzywxyhybmcflyzhqyzmqxdbxbzwzms',
+      'lpdmyckfmzklzcyjycclhxfzlydqzpzygyjyzmzxdzfyfyttqtchgspczmlccytzxjcytjmkslpzhysnwllytpzctzzcktxdhxxtqcypksmqccyyazhtjpcylzlyjbjxtfnyljyynrxcylmmnxjsmybcsysslzylljjgyldzdpqbfzzblfndsqkczfhhhgqmrdsxycstxnqqjpyjbfcxdyqfbnxejdgyqbsrcnfyyqpghyjdyzxgrhtkyleqdzntsmgklbsgbpyszbytjzsszjcssxzbhbscsbzczptqfzmqflypybbjgszmxxdjmthyskkbjtxhjcegbsmjyjzcxtmljyxrzzqscxxqptzxmkyxxxjcljprmyygadyskqlsadhrskqxzxztcghz',
+      'tlmlwxybwsycdbhjhcfcwzsxhytkzlxqshlyczjxemplprcgltbzztlzjcyjgdtclglpllqpjmzpapxyzlaktkdnczzbnzctdqqzjyjgmctxltgcszlmlhbglkfwnwzhdxphlfmkydlgxdtwzfrjejctzhydxykshwfzcqshktmqqhtchymjdjskhxzjzbzzxympajqmsdbxlsklyynwrtsqlscbpdbsgzwyhtlkssswhzzlyytnxjgmjszsxfwnlsoztxgxlsammlbwldszylakqcqctmycfjbslxclzjclxxksbzqclhjphqplsxsckslnhpsfqqytxjjzlqldxzjjzdyydjnzptfcdskjfsljhylzqjzlbthydgdjfdbyazxdzhzjnhhqbykn',
+      'xjjqczmlljzkspldsclbblxklelxjlbjycxjxgcnlcqplzlznjtzljgyzdzpltqcssfdmnycxgbtjdcznbgbqyqjwgkfhtnbyqzqgbkpbbyzmtjdytblsqmbsxtbnpdxklemyycjynzdtldykzzxddxhqshdgmzsjycctayrzlpwltlkxslzcggexclfxlkjrtlqjaqzncmbqdkkcxglczjzxjhptdjjmzqykqsecqzdshhadmlzfmmzbgntjnnlgbyjbrbtmlbyjdzxlcjlpldlpcqdhlhzlycblcxzcjadqlmzmmsshmybhbskkbhrsxxjmxsdznzpxlbbragggfchgmsklltsjyycqlcskywyehywhbhqywbawykqldqftntkhqcgdqktgpkx',
+      'hcpdhtwtmssyhbwcrwxhjmkmzngwtmlkfghkjyldyycxwhyeclqhkqhtdqhhffldxqwgzyydesbpkyrzpjfyyzjceqdzzdlattbbfjllcxdlmjsdxegygsjqxcfbxsszpdyzcxdnyxpfzydlyjccpltxlsxyzyrxcyysdylwwndsahjsygyhgywkaxtjzdaxysrltdjssaxfnejdxyzhlxlllzhzsjnyqyqqxyjghzgjcyjchzlycdshwsgczyjxcllnxzjjyyxnfsmwfpylcyllabwddhwdxjmcxztzpmlqzhsfhzynztlldywlslxhymmylmbwwkyxyadtxylldjpybpwfxjmmmllhafdllaflbhhhbqqjtzjcqjjdjtffkmmmbythygdcqrdd',
+      'wrqjxnbysnmzdbyytbjhpybygtjxaahgqdqtmystqxkbtsbkjlxrbeqqhqmjjbdjwtgtbxpgbktlgqxjjjcdhxqdwjlwrfmqgwqhckryswgbtgygbwsdwdwrfhwytjjxxxjyzyslphyypayxhydqkxshxyxeskqhywbdddpplcjlhqeewxksyyhdyplfjthkjltcyyhhjttpltzzcdlthqkcxqysteeywkyzyxxyysddjkllpwmcyhqgxyhcrmbxpllnqydqhxsxxwgdqbshyllpjjjthyjkyphthyyktyezyenmdshlcrpqfbgfxzbsbtlgxsjbswyysksflxlpplbbblbsfxfyzbsjssylpbbffffsscjdstzsxtryjcyffsytyzbjtbctsbsd',
+      'hrtjjbytcxyjeylxcbnebjdsysyhgsjzbxbytfzwgenyhhthjhatfwgcstbgxklstywmtmbyxjskzscdyjrcytwxzfhmymcxlznsdjtttxrycfyjsbsdyerxhljxbbdeynjghxgckgscymblxjmsznskgxfbnbbthfjaafxyxfpxmyfhdtzcxzzpxrsywzdlybbjtyqwqjpzypzjznjpzjlztfysbttslmptzrtdxqsjehbzylzdhljsqmlhtxtjecxalzzspktlzkqqyfsygywpcpqfhqhytqxzkrsgtgsqczlptxcdyyzssqzslxlzmacbcqbzyxhbsxlzdltcdjtylzjyytpzylltxjsjxhlbmytxcqrblzssfjzztnjydxmyjhlhpblcyxqj',
+      'qqkzzscpzkswalqsblcczjsxgwwwygyatjbbctdkhqhkgtgpbkqyslbxbbckbmllxdzstbklggqkqlsbkkdfxrmdkbftpzfrtbbmferqgxkjpzsstlbzdpszqzsjthljqlzbpmsmmsxlqqnhknblrddnhxdhddjcyygyfqgzlgsygmjqgkhbpmxyxlytqwlwgcpbmjxcyzydrjbhtdjxeeshtmjsbyplwhlzffnypmhxqhpltbqpfbcwjdbygpnxtbfzjgsddtjshxeawzzyllttybwjkgxghlfkxdjtmszsqynzggswqsphtlsskmclzxyszqzxncjdqgzdlfnykljcjllzlmzznhydsshthxzlzzbbhqzwwycrdhlyqqjbeyfsgxthsrxwqhwf',
+      'slmssgzttyeyqqwrslalhmjtqjsmxqbjjzjxzyzkxbyqxbjxshzssfglxmxzxfghkzszggylclsarjxhslllmzxelglxydjytlfbhbpnlyzfbbhptgjkwetzhkjjxzxxglljlstgshjjyqlqzfkcgnndjsszfdbctwwseqfhqjbsaqtgypjlbxbmmywxgslzhglzgnyfljbyfdjfrgsfmbyzhqfbwjsyfyjjphzbyyzffwodgrlmftmlbzgycqxcdjygzyyyytytydwegazyhxjlzythlrmgrjxzclhneljjthtbwjybjjbxjjtjteekhwsljplpsfazpqqbdlqjjtyyqlyzkdksqjyyjzldqcgjjyzjsycmraqthtejmfctyhypkmhycwjdcfhy',
+      'yxwshctxrljgjshccyyyjltkttytmxgtcjtzayyoczlylbszywjytsjyhbyshfjlygjxxtmzyyltxxypclxyjzyzyypnhmymdyylblhlsyygqllnjjymsoycbzgdlyxylcqyxtszegxhzglhwbljgeyxtwqmakbpqcgyshhegqcmwyywljyjhyyzlljjylhzyhmgsljljxcjjyclycjpcpzjzjmmylcjlnqljjjlxxjmlszljqlycmmhcfmmfpqqmfxlqmcffqmmmmhmznfhhjgtthhkhslnchhyqdxtmmqdcydyxyqmyqylddcyyydazdcymzydlzfffmmycqcwzzmabtbyctdmndzggdftypcgqyttssffwbdtzqssystwjjhjytsxxylbyqhw',
+      'whxezxwznnqzjzjjqjccchyyxbzxccyjtllcqxknjycyycynzzqyyoewyczdcjycchyjlbtzkycqwlpgpyllgkdldlgkgqbgychjxy????z?w???z????s?????l???????sl??z????lgtm????gd?????????????????????atn??hbltdzlatmmbj?lx',
+    ].join('');
+
+    const GROUP_COLORS_DARK = {
+      '#4c7dff': '#89a8ff',
+      '#e4539c': '#ff8bc2',
+      '#a259d9': '#c58df2',
+      '#3f9bf0': '#72c6ff',
+      '#2fa7a0': '#5fd8ce',
+      '#e28a3a': '#ffb86e',
+      '#d6b02f': '#f1d45f',
+      '#8a8f98': '#b9c0ca',
+    };
+
+    function groupColorVars(color) {
+      return {
+        '--dsg-group-color-light': color,
+        '--dsg-group-color-dark': GROUP_COLORS_DARK[color] ?? color,
+      };
+    }
+
+    function pinyinInitialOfChar(char) {
+      const code = char.codePointAt(0);
+      if (code === undefined || code < 0x4E00 || code > 0x9FFF) return undefined;
+      const initial = PINYIN_BASIC_INITIALS[code - 0x4E00];
+      return initial && initial !== '?' ? initial : undefined;
+    }
+
+    function textInitialKey(value) {
+      const text = typeof value === 'string' ? value.normalize('NFKC') : '';
+      let key = '';
+      for (const char of text) {
+        const initial = pinyinInitialOfChar(char);
+        if (initial !== undefined) {
+          key += initial;
+          continue;
+        }
+        if (/[A-Za-z0-9]/.test(char)) key += char.toLowerCase();
+      }
+      return key || text.toLowerCase();
+    }
+
+    const INITIAL_COLLATOR = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+
+    function compareTextInitial(left, right) {
+      return INITIAL_COLLATOR.compare(textInitialKey(left), textInitialKey(right))
+        || INITIAL_COLLATOR.compare(String(left), String(right));
+    }
+
     const ZH = {
       'section.title': '工作区',
       'section.loading': '正在加载工作区…',
@@ -101,6 +204,16 @@ window.__ModuleLoader__.load({
       'view.collapseAllGroups': '折叠所有分组',
       'view.expandAllWorkspaces': '展开所有工作区',
       'view.collapseAllWorkspaces': '折叠所有工作区',
+      'view.workspaceLayout': '工作区划分',
+      'view.workspaceLayout.workspace': '工作区',
+      'view.workspaceLayout.tree': '工作区树',
+      'view.workspaceLayout.flat': '单列表',
+      'sort.byTime': '按时间顺序排序',
+      'sort.byInitial': '按首字母排序',
+      'sort.done.time': '已按时间顺序排序',
+      'sort.done.initial': '已按首字母顺序排序',
+      'view.workspaceTree': '按工作区树划分',
+      'view.flatList': '单列表',
       'view.resetOrder': '恢复自动排序',
       'ungrouped': '未分组',
       'group.defaultName': '组 {n}',
@@ -224,6 +337,16 @@ window.__ModuleLoader__.load({
       'view.collapseAllGroups': 'Collapse all groups',
       'view.expandAllWorkspaces': 'Expand all workspaces',
       'view.collapseAllWorkspaces': 'Collapse all workspaces',
+      'view.workspaceLayout': 'Workspace layout',
+      'view.workspaceLayout.workspace': 'Workspace',
+      'view.workspaceLayout.tree': 'Workspace tree',
+      'view.workspaceLayout.flat': 'Single list',
+      'sort.byTime': 'Sort by time',
+      'sort.byInitial': 'Sort by initial',
+      'sort.done.time': 'Sorted by time',
+      'sort.done.initial': 'Sorted by initial',
+      'view.workspaceTree': 'Group by workspace tree',
+      'view.flatList': 'Single list',
       'view.resetOrder': 'Reset to automatic order',
       'ungrouped': 'Ungrouped',
       'group.defaultName': 'Group {n}',
@@ -293,7 +416,7 @@ window.__ModuleLoader__.load({
     }
 
     function loadPrefs() {
-      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, hideArchived: true };
+      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, childOrders: {}, hideArchived: true, workspaceTree: false, flatList: false };
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (!raw) return empty;
@@ -350,7 +473,24 @@ window.__ModuleLoader__.load({
             if (clean.length > 0) topOrders[workspaceId] = clean;
           }
         }
-        return { groups, collapsedWorkspaces, manualOrders, topOrders, hideArchived: parsed.hideArchived !== false };
+        const childOrders = {};
+        if (parsed.childOrders && typeof parsed.childOrders === 'object') {
+          for (const [workspaceId, order] of Object.entries(parsed.childOrders)) {
+            if (!workspaceId || !Array.isArray(order)) continue;
+            const clean = [...new Set(order.filter((id) => typeof id === 'string' && id.length > 0))];
+            if (clean.length > 0) childOrders[workspaceId] = clean;
+          }
+        }
+        return {
+          groups,
+          collapsedWorkspaces,
+          manualOrders,
+          topOrders,
+          childOrders,
+          hideArchived: parsed.hideArchived !== false,
+          workspaceTree: parsed.workspaceTree === true && parsed.flatList !== true,
+          flatList: parsed.flatList === true,
+        };
       } catch {
         return empty;
       }
@@ -510,6 +650,52 @@ window.__ModuleLoader__.load({
       if (!inserted) order.push(groupKey);
       next = setTopOrder(next, workspaceId, order);
       return next;
+    }
+
+    function normalizeWorkspacePath(value) {
+      const path = typeof value === 'string' ? value : '';
+      const withSlashes = (/^[A-Za-z]:[/\\]/.test(path) || path.startsWith('\\\\'))
+        ? path.replaceAll('\\', '/')
+        : path;
+      return withSlashes.replace(/\/+$/, '');
+    }
+
+    function owningParentWorkspacePath(path, parentPaths) {
+      const child = normalizeWorkspacePath(path);
+      if (!child) return undefined;
+      let owner;
+      let ownerLength = -1;
+      for (const parentPath of parentPaths) {
+        const root = normalizeWorkspacePath(parentPath);
+        if (root && root.length > ownerLength && child !== root && child.startsWith(`${root}/`)) {
+          owner = parentPath;
+          ownerLength = root.length;
+        }
+      }
+      return owner;
+    }
+
+    function buildWorkspaceParentMap(workspaces) {
+      const entries = workspaces.filter((workspace) => (
+        typeof workspace.path === 'string' && workspace.path.length > 0
+      ));
+      const parentPaths = entries.map((workspace) => workspace.path);
+      const idByPath = new Map(entries.map((workspace) => [workspace.path, workspace.workspaceId]));
+      const parentByPath = new Map(entries.map((workspace) => [
+        workspace.path,
+        (() => {
+          const ownerPath = owningParentWorkspacePath(workspace.path, parentPaths);
+          return ownerPath === undefined ? undefined : idByPath.get(ownerPath);
+        })(),
+      ]));
+      const parents = new Map();
+      for (const workspace of workspaces) {
+        parents.set(
+          workspace.workspaceId,
+          typeof workspace.path === 'string' ? parentByPath.get(workspace.path) : undefined,
+        );
+      }
+      return parents;
     }
 
     function insertIntoGroup(prefs, workspaceId, groupId, sessionId, anchorId, position) {
@@ -680,6 +866,14 @@ window.__ModuleLoader__.load({
       h('path', { key: 'b', d: 'M9.75977 4.50208H14.5509', stroke: 'currentColor' }),
       h('path', { key: 'c', d: 'M12.1492 6.89758L12.1492 2.10642', stroke: 'currentColor' }),
     ], props);
+    const IconWorkspaceTree = (props) => officialIcon([
+      h('path', { key: 'box', d: 'M14 12.05c0 .8-.65 1.45-1.46 1.45H3.46C2.65 13.5 2 12.85 2 12.05v-8.1c0-.8.65-1.45 1.46-1.45h2.4c.49 0 .94.24 1.21.65l.5.73c.27.4.73.65 1.21.65h3.76c.8 0 1.46.65 1.46 1.45v6.02Z' }),
+      h('path', { key: 'branches', d: 'M8.7 8.1v3M11.2 8.1v3' }),
+    ], props);
+    const IconFlatList = (props) => officialIcon([
+      h('path', { key: 'lines', d: 'M6 3.5h7.5M6 8h7.5M6 12.5h7.5' }),
+      h('path', { key: 'dots', d: 'M2.6 3.5h.01M2.6 8h.01M2.6 12.5h.01' }),
+    ], props);
     const IconNewChatCircle = (props) => officialIcon([
       h('path', { key: 'a', d: 'M2.37091 11.2501C1.58745 9.89288 1.32067 8.29835 1.61969 6.76006C1.91872 5.22177 2.76342 3.8433 3.99826 2.87846C5.2331 1.91362 6.77494 1.42737 8.33988 1.50925C9.90482 1.59113 11.3875 2.23562 12.5149 3.32406C13.6425 4.41269 14.3387 5.87206 14.4754 7.4334C14.612 8.99474 14.18 10.5529 13.2587 11.8209C12.3375 13.0888 10.9891 13.9813 9.46194 14.3337C8.18691 14.628 6.85895 14.5294 5.64989 14.0605C5.1712 13.8748 4.76962 13.4932 4.26534 13.3967C3.67413 13.2835 2.95257 13.5598 2.03794 14.3337', stroke: 'currentColor' }),
       h('path', { key: 'b', d: 'M8 5V11', stroke: 'currentColor' }),
@@ -700,6 +894,10 @@ window.__ModuleLoader__.load({
     const IconSort = (props) => officialIcon([
       h('path', { key: 'up', d: 'm5.1 6 2.9-2.9L10.9 6' }),
       h('path', { key: 'down', d: 'm5.1 10 2.9 2.9 2.9-2.9' }),
+    ], props);
+    const IconSortAlpha = (props) => icon([
+      h('path', { key: 'a', d: 'M3.5 18L7.5 6.5L11.5 18M5.2 13.5H9.8' }),
+      h('path', { key: 'z', d: 'M14.5 6.5H20.5L14.5 18H20.5' }),
     ], props);
     const IconTrash = (props) => officialIcon([
       h('path', { key: 'a', d: 'M1.28149 3.88831H14.7187', stroke: 'currentColor' }),
@@ -804,8 +1002,10 @@ window.__ModuleLoader__.load({
       .dsg-searchInput::placeholder{color:var(--dsw-alias-label-tertiary)}
       .dsg-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:1px 2px 14px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent}
       .dsg-workspace{display:flex;flex-direction:column;gap:1px;margin-bottom:2px}
-      .dsg-wsHeader{display:flex;align-items:center;gap:7px;height:34px;padding:0 4px 0 7px;border-radius:7px;cursor:pointer;color:var(--dsw-alias-label-primary);flex:none}
+      .dsg-wsHeader{display:flex;align-items:center;gap:7px;height:34px;margin:0 2px 0 var(--dsg-ws-row-indent,0px);padding:0 4px 0 7px;border-radius:7px;cursor:pointer;color:var(--dsw-alias-label-primary);flex:none}
       .dsg-wsHeader:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-wsHeader.selected{background:var(--dsw-alias-interactive-bg-active,var(--dsw-alias-interactive-bg-hover));box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2)}
+      .dsg-wsHeader.selected .dsg-folder{color:var(--dsw-alias-state-business-primary)}
       .dsg-wsHeader.active .dsg-folder{color:var(--dsw-alias-state-business-primary)}
       .dsg-wsHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
       .dsg-folder{width:17px;height:17px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
@@ -817,9 +1017,12 @@ window.__ModuleLoader__.load({
       .dsg-wsHeader:hover .dsg-wsActions,.dsg-wsHeader:focus-within .dsg-wsActions{display:inline-flex}
       .dsg-wsAction{width:16px;height:16px;padding:0;border:none;background:transparent;color:var(--dsw-alias-label-tertiary);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border-radius:3px}
       .dsg-wsAction:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-wsStatuses{display:inline-flex;align-items:center;gap:7px;flex:none;margin-right:1px}
+      .dsg-wsStatusItem{display:inline-flex;align-items:center;gap:2px}
+      .dsg-wsStatusCount{font-size:10.5px;line-height:14px;font-weight:500;color:var(--dsw-alias-label-secondary)}
       .dsg-wsName{flex:1;min-width:0;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .dsg-wsBody{display:flex;flex-direction:column;gap:1px}
-      .dsg-group{display:flex;flex-direction:column;gap:1px;margin:2px 2px 0 24px}
+      .dsg-group{display:flex;flex-direction:column;gap:1px;margin:2px 2px 0 calc(24px + var(--dsg-ws-indent,0px))}
       .dsg-groupHeader{display:flex;align-items:center;gap:6px;height:30px;box-sizing:border-box;padding:0 5px 0 6px;border-radius:7px;cursor:pointer;flex:none;color:var(--dsw-alias-label-primary);background:color-mix(in srgb, var(--dsg-group-color) 11%, transparent)}
       .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 18%, transparent)}
       .dsg-groupHeader.selected{box-shadow:inset 0 0 0 1.5px var(--dsg-group-color)}
@@ -839,13 +1042,20 @@ window.__ModuleLoader__.load({
       .dsg-groupActions{display:inline-flex;align-items:center;gap:6px;flex:none;max-width:0;overflow:hidden;opacity:0;transition:max-width .14s var(--ds-ease-in-out, ease), opacity .14s var(--ds-ease-in-out, ease)}
       .dsg-groupHeader:hover .dsg-groupActions,.dsg-groupHeader:focus-within .dsg-groupActions{max-width:42px;opacity:1}
       .dsg-groupBody{display:flex;flex-direction:column;gap:1px;margin-left:6px;padding-left:0;border-left:2px solid var(--dsg-group-color)}
+      .dsg-groupHeader,.dsg-groupBody,.dsg-groupDot{--dsg-group-color:var(--dsg-group-color-light)}
+      body[data-ds-dark-theme] .dsg-groupHeader,body[data-ds-dark-theme] .dsg-groupBody,body[data-ds-dark-theme] .dsg-groupDot{--dsg-group-color:var(--dsg-group-color-dark,var(--dsg-group-color-light))}
+      body[data-ds-dark-theme] .dsg-groupHeader{background:color-mix(in srgb, var(--dsg-group-color) 20%, transparent)}
+      body[data-ds-dark-theme] .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
+      body[data-ds-dark-theme] .dsg-groupDot{box-shadow:0 0 0 2px color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
+
       .dsg-groupBody>.dsg-sessionRow{padding-left:26px}
       .dsg-groupBody>.dsg-sessionRow.hasStatus{padding-left:10px}
-      .dsg-wsBody>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
+      .dsg-wsBody>.dsg-sessionRow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
       .dsg-groupBody.dsg-zoneDim{margin-left:6px}
       .dsg-sessionOverflow{width:100%;box-sizing:border-box;height:28px;flex:none;padding:0 12px 0 26px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:20px;text-align:left;cursor:pointer}
       .dsg-sessionOverflow:hover{color:var(--dsw-alias-label-secondary)}
-      .dsg-wsBody>.dsg-sessionOverflow,.dsg-simpleList>.dsg-sessionOverflow{margin:0 2px 0 24px;padding-left:10px}
+      .dsg-wsBody>.dsg-sessionOverflow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
+      .dsg-simpleList>.dsg-sessionOverflow{margin:0 2px 0 24px;padding-left:10px}
       .dsg-statusSlot{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:flex-start}
       .dsg-stateDot{position:relative;display:inline-block;flex:none}
       .dsg-stateDot:after{content:"";position:absolute;inset:20%;border-radius:50%;background:currentColor}
@@ -883,6 +1093,8 @@ window.__ModuleLoader__.load({
       .dsg-ungroupedZone.dsg-zoneDrop{border-color:transparent;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)}
       .dsg-zoneText{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;padding:6px 0}
       .dsg-ungroupedHeader{display:flex;align-items:center;gap:7px;height:30px;padding:0 8px 0 10px;flex:none;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:500}
+      .dsg-flatList{display:flex;flex-direction:column;gap:2px;padding:1px 0 8px}
+      .dsg-flatList>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
       .dsg-simpleList{display:flex;flex-direction:column;gap:1px;padding-left:0}
       .dsg-empty{padding:26px 16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;display:flex;flex-direction:column;align-items:center;gap:10px}
       .dsg-emptyAction{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
@@ -958,9 +1170,19 @@ window.__ModuleLoader__.load({
       .dsg-rowAction:hover{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
       .dsg-sessionRow:hover .dsg-time,.dsg-sessionRow:focus-within .dsg-time{display:none}
       .dsg-menuLabelText{padding:4px 8px 2px;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;white-space:nowrap}
+      .dsg-menuField{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px;color:var(--dsw-alias-label-primary);font-size:12.5px;white-space:nowrap}
+      .dsg-menuFieldLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .dsg-layoutOptions{display:inline-flex;align-items:center;gap:2px;flex:none}
+      .dsg-layoutOption{display:inline-flex;align-items:center;gap:1px}
+      .dsg-layoutBtn{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-layoutBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-layoutBtn[aria-pressed=true]{color:var(--dsw-alias-state-business-primary)}
+      .dsg-layoutBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-layoutCheck{width:12px;height:12px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
       .dsg-menuSeparator{height:1px;margin:4px 6px;background:var(--dsw-alias-border-l1)}
       .dsg-swatches{display:flex;align-items:center;gap:7px;padding:3px 9px 6px;flex-wrap:wrap}
-      .dsg-swatch{width:17px;height:17px;padding:0;border-radius:50%;border:2px solid transparent;cursor:pointer;flex:none}
+      .dsg-swatch{width:17px;height:17px;padding:0;border-radius:50%;border:2px solid transparent;background:var(--dsg-swatch-color-light);cursor:pointer;flex:none}
+      body[data-ds-dark-theme] .dsg-swatch{background:var(--dsg-swatch-color-dark,var(--dsg-swatch-color-light))}
       .dsg-swatch.selected{border-color:var(--dsw-alias-label-primary);box-shadow:0 0 0 1px var(--dsw-alias-bg-overlay)}
       .dsg-swatch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
     `;
@@ -1376,7 +1598,7 @@ window.__ModuleLoader__.load({
           'aria-label': tr('group.aria', { name: group.name }),
           'aria-expanded': !collapsed,
           'aria-current': selected ? 'true' : undefined,
-          style: { '--dsg-group-color': group.color },
+          style: groupColorVars(group.color),
           onClick: onToggle,
           onKeyDown: (event) => {
             if (event.target !== event.currentTarget) return;
@@ -2063,6 +2285,10 @@ window.__ModuleLoader__.load({
 
       const workspaces = Array.isArray(workspaceState?.items) ? workspaceState.items : [];
       const phase = workspaceState?.phase ?? 'pending';
+      const workspaceParents = React.useMemo(
+        () => buildWorkspaceParentMap(workspaces),
+        [workspaces],
+      );
       const archivedSessionIds = React.useMemo(
         () => new Set(Array.isArray(workspaceState?.archivedSessionIds) ? workspaceState.archivedSessionIds : []),
         [workspaceState?.archivedSessionIds],
@@ -2079,6 +2305,42 @@ window.__ModuleLoader__.load({
         }
         return null;
       }, [list]);
+
+      const activeWorkspaceRef = React.useRef(null);
+      React.useEffect(() => {
+        if (prefs.workspaceTree !== true || prefs.flatList === true) {
+          activeWorkspaceRef.current = null;
+          return;
+        }
+        if (!currentSessionId) return;
+        const activeWorkspace = workspaces.find((workspace) => (
+          (workspace.sessionIds ?? []).includes(currentSessionId)
+        ));
+        if (!activeWorkspace) return;
+        if (activeWorkspaceRef.current === activeWorkspace.workspaceId) return;
+        activeWorkspaceRef.current = activeWorkspace.workspaceId;
+        const collapsed = prefs.collapsedWorkspaces ?? {};
+        const ancestors = [];
+        const seen = new Set();
+        let parentId = workspaceParents.get(activeWorkspace.workspaceId);
+        while (parentId !== undefined && !seen.has(parentId)) {
+          seen.add(parentId);
+          if (collapsed[parentId] === true) ancestors.push(parentId);
+          parentId = workspaceParents.get(parentId);
+        }
+        if (ancestors.length === 0) return;
+        setPrefs((previous) => {
+          const next = { ...(previous.collapsedWorkspaces ?? {}) };
+          let changed = false;
+          for (const workspaceId of ancestors) {
+            if (next[workspaceId]) {
+              delete next[workspaceId];
+              changed = true;
+            }
+          }
+          return changed ? { ...previous, collapsedWorkspaces: next } : previous;
+        });
+      }, [prefs.workspaceTree, prefs.flatList, prefs.collapsedWorkspaces, currentSessionId, workspaces, workspaceParents]);
 
       React.useEffect(() => {
         // Workspace data arrives asynchronously; reconciling against the empty
@@ -2144,13 +2406,27 @@ window.__ModuleLoader__.load({
             }
             if (kept.length > 0) nextTopOrders[workspaceId] = kept;
           }
+          const parentMap = buildWorkspaceParentMap(workspaces);
+          const nextChildOrders = {};
+          for (const [parentId, order] of Object.entries(previous.childOrders ?? {})) {
+            if (!parentMap.has(parentId) || !Array.isArray(order)) {
+              changed = true;
+              continue;
+            }
+            const kept = order.filter((childId) => parentMap.get(childId) === parentId);
+            if (kept.length !== order.length) changed = true;
+            if (kept.length > 0) nextChildOrders[parentId] = kept;
+          }
           if (!changed) return previous;
           return {
             groups: nextGroups,
             collapsedWorkspaces: nextCollapsed,
             manualOrders: nextManualOrders,
             topOrders: nextTopOrders,
+            childOrders: nextChildOrders,
             hideArchived: previous.hideArchived !== false,
+            workspaceTree: previous.workspaceTree === true,
+            flatList: previous.flatList === true,
           };
         });
       }, [workspaces, phase]);
@@ -2187,6 +2463,119 @@ window.__ModuleLoader__.load({
         if (!candidate || candidate === sessionId) return tr('untitled');
         return candidate;
       };
+      const sortScope = (previous, rootWorkspaceId, mode) => {
+        const byId = new Map(workspaces.map((workspace) => [workspace.workspaceId, workspace]));
+        const childrenByParent = new Map();
+        for (const workspace of workspaces) {
+          const parentId = workspaceParents.get(workspace.workspaceId);
+          if (parentId === undefined) continue;
+          const siblings = childrenByParent.get(parentId) ?? [];
+          siblings.push(workspace.workspaceId);
+          childrenByParent.set(parentId, siblings);
+        }
+        const updatedAtOf = (sessionId) => list.byId?.[sessionId]?.updatedAt ?? 0;
+        const latestCache = new Map();
+        const latestOfWorkspace = (workspaceId, seen = new Set()) => {
+          if (latestCache.has(workspaceId)) return latestCache.get(workspaceId);
+          if (seen.has(workspaceId)) return 0;
+          seen.add(workspaceId);
+          const workspace = byId.get(workspaceId);
+          let latest = 0;
+          for (const sessionId of workspace?.sessionIds ?? []) {
+            latest = Math.max(latest, updatedAtOf(sessionId));
+          }
+          for (const childId of childrenByParent.get(workspaceId) ?? []) {
+            latest = Math.max(latest, latestOfWorkspace(childId, seen));
+          }
+          seen.delete(workspaceId);
+          latestCache.set(workspaceId, latest);
+          return latest;
+        };
+        const compare = (left, right) => {
+          if (mode === 'initial') {
+            const primary = compareTextInitial(left.title, right.title);
+            if (primary !== 0) return primary;
+            if (left.time !== right.time) return right.time - left.time;
+          } else {
+            if (left.time !== right.time) return right.time - left.time;
+            const primary = compareTextInitial(left.title, right.title);
+            if (primary !== 0) return primary;
+          }
+          return String(left.id).localeCompare(String(right.id));
+        };
+        const nextGroups = { ...(previous.groups ?? {}) };
+        const nextTopOrders = { ...(previous.topOrders ?? {}) };
+        const nextChildOrders = { ...(previous.childOrders ?? {}) };
+        const visited = new Set();
+        const visit = (workspaceId) => {
+          if (visited.has(workspaceId)) return;
+          visited.add(workspaceId);
+          const workspace = byId.get(workspaceId);
+          if (!workspace) return;
+          const groups = Array.isArray(nextGroups[workspaceId])
+            ? nextGroups[workspaceId].map((group) => ({ ...group, sessionIds: [...group.sessionIds] }))
+            : [];
+          const groupedIds = new Set(groups.flatMap((group) => group.sessionIds));
+          const ungrouped = (workspace.sessionIds ?? []).filter((sessionId) => !groupedIds.has(sessionId));
+          const topItems = [
+            ...groups.map((group) => ({
+              kind: 'group',
+              id: group.id,
+              title: group.name,
+              time: group.sessionIds.reduce((latest, sessionId) => Math.max(latest, updatedAtOf(sessionId)), 0),
+            })),
+            ...ungrouped.map((sessionId) => ({
+              kind: 'session',
+              id: sessionId,
+              title: titleOf(sessionId),
+              time: updatedAtOf(sessionId),
+            })),
+          ];
+          topItems.sort(compare);
+          const topKeys = topItems.map((item) => (
+            item.kind === 'group' ? topKeyOfGroup(item.id) : topKeyOfSession(item.id)
+          ));
+          if (topKeys.length > 0) nextTopOrders[workspaceId] = topKeys;
+          else delete nextTopOrders[workspaceId];
+          const sortedGroups = groups.map((group) => {
+            const members = group.sessionIds.map((sessionId) => ({
+              id: sessionId,
+              title: titleOf(sessionId),
+              time: updatedAtOf(sessionId),
+            }));
+            members.sort(compare);
+            return { ...group, sessionIds: members.map((member) => member.id) };
+          });
+          if (sortedGroups.length > 0) nextGroups[workspaceId] = sortedGroups;
+          else delete nextGroups[workspaceId];
+          const children = (childrenByParent.get(workspaceId) ?? []).map((childId) => {
+            const child = byId.get(childId);
+            return {
+              id: childId,
+              title: child ? workspaceTitle(child) : childId,
+              time: latestOfWorkspace(childId),
+            };
+          });
+          children.sort(compare);
+          if (children.length > 0) nextChildOrders[workspaceId] = children.map((child) => child.id);
+          else delete nextChildOrders[workspaceId];
+          for (const child of children) visit(child.id);
+        };
+        if (rootWorkspaceId === null) {
+          for (const workspace of workspaces) {
+            if (workspaceParents.get(workspace.workspaceId) === undefined) visit(workspace.workspaceId);
+          }
+        } else {
+          visit(rootWorkspaceId);
+        }
+        return {
+          ...previous,
+          groups: nextGroups,
+          topOrders: nextTopOrders,
+          childOrders: nextChildOrders,
+        };
+      };
+
       const isVisible = (sessionId) => {
         const row = list.byId?.[sessionId];
         if (!row) return false;
@@ -2327,6 +2716,47 @@ window.__ModuleLoader__.load({
           + section.groups.reduce((sum, item) => sum + item.members.length, 0),
         0,
       );
+
+      const flatListMode = prefs.flatList === true;
+      const workspaceTreeMode = !flatListMode && prefs.workspaceTree === true;
+      const treeLayout = (() => {
+        const sectionById = new Map();
+        for (const section of sections) {
+          if (section.workspace) sectionById.set(section.workspace.workspaceId, section);
+        }
+        const childrenByParent = new Map();
+        const roots = [];
+        for (const section of sections) {
+          if (!section.workspace || !workspaceTreeMode) {
+            roots.push(section);
+            continue;
+          }
+          const workspaceId = section.workspace.workspaceId;
+          let parentId = workspaceParents.get(workspaceId);
+          const visited = new Set();
+          while (parentId !== undefined && !sectionById.has(parentId) && !visited.has(parentId)) {
+            visited.add(parentId);
+            parentId = workspaceParents.get(parentId);
+          }
+          if (parentId !== undefined && parentId !== workspaceId) {
+            const siblings = childrenByParent.get(parentId);
+            if (siblings === undefined) childrenByParent.set(parentId, [section]);
+            else siblings.push(section);
+          } else {
+            roots.push(section);
+          }
+        }
+        return { roots, childrenByParent };
+      })();
+
+      const collectWorkspaceSessionIds = (workspace) => {
+        const ids = new Set(workspace.sessionIds ?? []);
+        const childSections = treeLayout.childrenByParent.get(workspace.workspaceId) ?? [];
+        for (const child of childSections) {
+          for (const sessionId of collectWorkspaceSessionIds(child.workspace)) ids.add(sessionId);
+        }
+        return [...ids];
+      };
 
       const closeMenu = React.useCallback(() => setMenu(null), []);
 
@@ -2705,38 +3135,47 @@ window.__ModuleLoader__.load({
         }
       };
 
-      const handleSortWorkspaceByTime = (workspaceId) => {
+      const chooseWorkspaceLayout = (mode) => {
         closeMenu();
-        const workspace = workspaces.find((item) => item.workspaceId === workspaceId);
-        if (!workspace) return;
-        const timeOf = (sessionId) => list.byId?.[sessionId]?.updatedAt ?? 0;
-        setPrefs((previous) => {
-          const groups = previous.groups?.[workspaceId] ?? [];
-          const nextGroups = groups.map((group) => ({
-            ...group,
-            sessionIds: [...group.sessionIds].sort((left, right) => (
-              timeOf(right) - timeOf(left) || String(left).localeCompare(String(right))
-            )),
-          }));
-          const groupedIds = new Set(nextGroups.flatMap((group) => group.sessionIds));
-          const ungrouped = (workspace.sessionIds ?? []).filter((sessionId) => !groupedIds.has(sessionId));
-          const topItems = [
-            ...nextGroups.map((group) => ({
-              key: topKeyOfGroup(group.id),
-              time: group.sessionIds.reduce((latest, sessionId) => Math.max(latest, timeOf(sessionId)), 0),
-            })),
-            ...ungrouped.map((sessionId) => ({
-              key: topKeyOfSession(sessionId),
-              time: timeOf(sessionId),
-            })),
-          ].sort((left, right) => right.time - left.time || left.key.localeCompare(right.key));
-          let next = { ...previous, groups: { ...(previous.groups ?? {}) } };
-          if (nextGroups.length === 0) delete next.groups[workspaceId];
-          else next.groups[workspaceId] = nextGroups;
-          next = setTopOrder(next, workspaceId, topItems.map((item) => item.key));
-          return next;
-        });
-        notify(tr('workspace.sortedByTime'));
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          workspaceTree: mode === 'tree',
+          flatList: mode === 'flat',
+        }));
+      };
+
+      const handleSortWorkspace = (workspaceId, mode) => {
+        closeMenu();
+        setPrefs((previous) => sortScope(previous, workspaceId, mode));
+        notify(tr(mode === 'initial' ? 'sort.done.initial' : 'sort.done.time'));
+      };
+
+      const handleSortAll = (mode) => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => sortScope(previous, null, mode));
+        notify(tr(mode === 'initial' ? 'sort.done.initial' : 'sort.done.time'));
+      };
+
+      const handleToggleWorkspaceTree = () => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          workspaceTree: previous.workspaceTree !== true,
+          flatList: false,
+        }));
+      };
+
+      const handleToggleFlatList = () => {
+        closeMenu();
+        setViewMenu(null);
+        setPrefs((previous) => ({
+          ...previous,
+          flatList: previous.flatList !== true,
+          workspaceTree: false,
+        }));
       };
 
       const handleToggleHideArchived = () => {
@@ -3154,7 +3593,7 @@ window.__ModuleLoader__.load({
                 'div',
                 {
                   className: 'dsg-groupBody' + (dropActive ? ' dsg-groupDrop' : ''),
-                  style: { '--dsg-group-color': group.color },
+                  style: groupColorVars(group.color),
                   onDragOver: (event) => handleGroupDragOver(event, workspace.workspaceId, group.id),
                   onDrop: (event) => handleGroupDrop(event, workspace.workspaceId, group.id),
                 },
@@ -3164,7 +3603,7 @@ window.__ModuleLoader__.load({
         );
       };
 
-      const renderWorkspace = (section) => {
+      const renderWorkspace = (section, depth = 0) => {
         if (section.ungroupedOnly) {
           const globalOverflow = overflowFor('global:ungrouped', section.ungrouped);
           return h(
@@ -3185,6 +3624,27 @@ window.__ModuleLoader__.load({
           );
         }
         const { workspace, groups, ungrouped, collapsed } = section;
+        let childSections = workspaceTreeMode
+          ? treeLayout.childrenByParent.get(workspace.workspaceId) ?? []
+          : [];
+        const savedChildOrder = workspaceTreeMode
+          ? prefs.childOrders?.[workspace.workspaceId]
+          : null;
+        if (Array.isArray(savedChildOrder) && childSections.length > 0) {
+          const byId = new Map(childSections.map((child) => [child.workspace.workspaceId, child]));
+          const ordered = [];
+          for (const childId of savedChildOrder) {
+            const child = byId.get(childId);
+            if (!child) continue;
+            ordered.push(child);
+            byId.delete(childId);
+          }
+          for (const child of childSections) {
+            if (byId.has(child.workspace.workspaceId)) ordered.push(child);
+          }
+          childSections = ordered;
+        }
+        const sectionIndent = workspaceTreeMode ? depth * 24 : 0;
         const ungroupedOverflow = overflowFor('workspace:' + workspace.workspaceId, ungrouped);
         const visibleUngrouped = new Set(ungroupedOverflow.rows);
         const topItems = section.topItems.filter((item) => (
@@ -3198,17 +3658,54 @@ window.__ModuleLoader__.load({
         const workspaceActive = activePanelId === null
           && currentSessionId !== null
           && (workspace.sessionIds ?? []).includes(currentSessionId);
+        const workspaceSelected = workspaceTreeMode
+          && depth > 0
+          && collapsed
+          && activePanelId === null
+          && currentSessionId !== null
+          && collectWorkspaceSessionIds(workspace).includes(currentSessionId);
+        const collapsedWorkspaceStatuses = [];
+        if (workspaceTreeMode && depth > 0 && collapsed) {
+          const buckets = new Map();
+          for (const sessionId of collectWorkspaceSessionIds(workspace)) {
+            if (!isVisible(sessionId)) continue;
+            const info = statusInfoFor(sessionId);
+            if (!info.showStatus) continue;
+            const state = info.primaryStatus.state;
+            const bucket = buckets.get(state) ?? {
+              state,
+              label: info.primaryStatus.label,
+              count: 0,
+              priority: state === 'warning' ? 0 : state === 'ongoing' ? 1 : 2,
+            };
+            bucket.count += 1;
+            buckets.set(state, bucket);
+          }
+          collapsedWorkspaceStatuses.push(...[...buckets.values()].sort((left, right) => (
+            left.priority - right.priority
+          )));
+        }
         return h(
           'section',
-          { className: 'dsg-workspace', key: section.key },
+          {
+            className: 'dsg-workspace',
+            key: section.key,
+            style: {
+              '--dsg-ws-indent': `${sectionIndent}px`,
+              '--dsg-ws-row-indent': `${workspaceTreeMode && depth > 0 ? depth * 24 : 0}px`,
+            },
+          },
           h(
             'div',
             {
-              className: 'dsg-wsHeader' + (workspaceActive ? ' active' : ''),
+              className: 'dsg-wsHeader'
+                + (workspaceActive ? ' active' : '')
+                + (workspaceSelected ? ' selected' : ''),
               role: 'button',
               tabIndex: 0,
               'data-workspace-id': workspace.workspaceId,
               'aria-expanded': !collapsed,
+              'aria-current': workspaceSelected ? 'true' : undefined,
               title: workspace.path || workspaceTitle(workspace),
               onClick: () => toggleWorkspace(workspace.workspaceId),
               onKeyDown: (event) => {
@@ -3227,6 +3724,28 @@ window.__ModuleLoader__.load({
               { className: 'dsg-wsChevron' + (collapsed ? '' : ' open') },
               h(IconTriangle, { width: 15, height: 15 }),
             ),
+            collapsedWorkspaceStatuses.length > 0
+              ? h(
+                  'span',
+                  {
+                    className: 'dsg-wsStatuses',
+                    title: collapsedWorkspaceStatuses.map((status) => (
+                      status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                    )).join('，'),
+                    'aria-label': collapsedWorkspaceStatuses.map((status) => (
+                      status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                    )).join('，'),
+                  },
+                  collapsedWorkspaceStatuses.map((status) => h(
+                    'span',
+                    { key: status.state, className: 'dsg-wsStatusItem' },
+                    h(StateDot, { state: status.state }),
+                    status.count > 1
+                      ? h('span', { className: 'dsg-wsStatusCount' }, String(status.count))
+                      : null,
+                  )),
+                )
+              : null,
             editingWorkspace?.workspaceId === workspace.workspaceId
               ? h(GroupNameEditor, {
                   initialValue: editingWorkspace.value,
@@ -3275,6 +3794,7 @@ window.__ModuleLoader__.load({
                   onDragOver: (event) => handleUngroupedDragOver(event, workspace.workspaceId),
                   onDrop: (event) => handleUngroupedDrop(event, workspace.workspaceId),
                 },
+                childSections.map((child) => renderWorkspace(child, depth + 1)),
                 topItems.map((item) => (
                   item.kind === 'group'
                     ? renderGroup(workspace, item.group, item.members)
@@ -3291,6 +3811,26 @@ window.__ModuleLoader__.load({
                 ),
               ),
         );
+      };
+
+      const renderFlatList = () => {
+        const children = [];
+        for (const section of sections) {
+          if (section.ungroupedOnly) {
+            for (const sessionId of section.ungrouped) {
+              children.push(renderSessionRow(sessionId, null, null));
+            }
+            continue;
+          }
+          for (const item of section.topItems) {
+            if (item.kind === 'group') {
+              children.push(renderGroup(section.workspace, item.group, item.members));
+            } else {
+              children.push(renderSessionRow(item.id, section.workspace.workspaceId, null));
+            }
+          }
+        }
+        return h('div', { className: 'dsg-flatList' }, children);
       };
 
       const renderAddWorkspaceDialog = () => {
@@ -3407,7 +3947,10 @@ window.__ModuleLoader__.load({
                 className: 'dsg-swatch' + (color === group.color ? ' selected' : ''),
                 title: color,
                 'aria-label': color,
-                style: { background: color },
+                style: {
+                  '--dsg-swatch-color-light': color,
+                  '--dsg-swatch-color-dark': GROUP_COLORS_DARK[color] ?? color,
+                },
                 onClick: () => {
                   setPrefs((previous) => patchGroup(previous, menu.workspaceId, menu.groupId, { color }));
                   closeMenu();
@@ -3431,8 +3974,13 @@ window.__ModuleLoader__.load({
             { rect: menu.rect, onClose: closeMenu },
             h(MenuItem, {
               icon: h(IconSort),
-              label: tr('workspace.sortByTime'),
-              onClick: () => handleSortWorkspaceByTime(workspace.workspaceId),
+              label: tr('sort.byTime'),
+              onClick: () => handleSortWorkspace(workspace.workspaceId, 'time'),
+            }),
+            h(MenuItem, {
+              icon: h(IconSortAlpha),
+              label: tr('sort.byInitial'),
+              onClick: () => handleSortWorkspace(workspace.workspaceId, 'initial'),
             }),
             h('div', { className: 'dsg-menuSeparator' }),
             h(MenuItem, {
@@ -3509,7 +4057,7 @@ window.__ModuleLoader__.load({
             key: group.id,
             icon: h('span', {
               className: 'dsg-groupDot',
-              style: { '--dsg-group-color': group.color },
+              style: groupColorVars(group.color),
             }),
             label: tr('session.moveToGroup', { name: group.name }),
             onClick: () => handleMoveToGroup(menu.workspaceId, group.id, menu.sessionId),
@@ -3540,6 +4088,58 @@ window.__ModuleLoader__.load({
           h(MenuItem, {
             label: tr('view.collapseAllWorkspaces'),
             onClick: () => applyViewAction('collapseWorkspaces'),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(
+            'div',
+            { className: 'dsg-menuField' },
+            h('span', { className: 'dsg-menuFieldLabel' }, tr('view.workspaceLayout')),
+            h(
+              'span',
+              { className: 'dsg-layoutOptions' },
+              [
+                { id: 'workspace', label: tr('view.workspaceLayout.workspace'), icon: IconFolderClose },
+                { id: 'tree', label: tr('view.workspaceLayout.tree'), icon: IconWorkspaceTree },
+                { id: 'flat', label: tr('view.workspaceLayout.flat'), icon: IconFlatList },
+              ].map((option) => h(
+                'span',
+                { key: option.id, className: 'dsg-layoutOption' },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'dsg-layoutBtn',
+                    title: option.label,
+                    'aria-label': option.label,
+                    'aria-pressed': (option.id === 'flat'
+                      ? prefs.flatList === true
+                      : option.id === 'tree' ? prefs.workspaceTree === true : prefs.flatList !== true && prefs.workspaceTree !== true),
+                    onClick: () => chooseWorkspaceLayout(option.id),
+                  },
+                  h(option.icon, { width: 16, height: 16 }),
+                ),
+                h(
+                  'span',
+                  { className: 'dsg-layoutCheck' },
+                  (option.id === 'flat'
+                    ? prefs.flatList === true
+                    : option.id === 'tree' ? prefs.workspaceTree === true : prefs.flatList !== true && prefs.workspaceTree !== true)
+                    ? h(IconCheck, { width: 12, height: 12 })
+                    : null,
+                ),
+              )),
+            ),
+          ),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            icon: h(IconSort),
+            label: tr('sort.byTime'),
+            onClick: () => handleSortAll('time'),
+          }),
+          h(MenuItem, {
+            icon: h(IconSortAlpha),
+            label: tr('sort.byInitial'),
+            onClick: () => handleSortAll('initial'),
           }),
           h('div', { className: 'dsg-menuSeparator' }),
           h(MenuItem, {
@@ -3613,7 +4213,9 @@ window.__ModuleLoader__.load({
                         )
                       : null,
                   )
-                : sections.map((section) => renderWorkspace(section)),
+                : flatListMode
+                  ? renderFlatList()
+                  : treeLayout.roots.map((section) => renderWorkspace(section, 0)),
           ),
         ),
         renderMenu(),
