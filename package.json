@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-groups",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "DSH Web plugin: Edge-style session groups with workspace tree, single list, recursive sorting and dark-mode palettes.",
@@ -45,5 +45,8 @@
   ],
   "engines": {
     "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "scripts": {
+    "test": "node tests/smoke.cjs"
   }
 }

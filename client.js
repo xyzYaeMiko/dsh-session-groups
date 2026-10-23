@@ -105,6 +105,22 @@ window.__ModuleLoader__.load({
       };
     }
 
+    function hexToRgb(value) {
+      const match = /^#?([0-9a-f]{6})$/i.exec(typeof value === 'string' ? value.trim() : '');
+      if (!match) return null;
+      const hex = match[1];
+      return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16),
+      };
+    }
+
+    function rgbToHex(r, g, b) {
+      const channel = (value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0');
+      return '#' + channel(r) + channel(g) + channel(b);
+    }
+
     function pinyinInitialOfChar(char) {
       const code = char.codePointAt(0);
       if (code === undefined || code < 0x4E00 || code > 0x9FFF) return undefined;
@@ -223,9 +239,20 @@ window.__ModuleLoader__.load({
       'group.newSession': '在分组中新建会话',
       'group.rename': '重命名分组',
       'group.color': '分组颜色',
+      'group.rgb': 'RGB',
+      'group.rgbTitle': '自定义 RGB 颜色',
+      'group.rgbApply': '应用',
+      'group.rgbCancel': '取消',
+      'group.rgbInvalid': '请输入 0–255 的整数',
       'group.collapse': '折叠分组',
       'group.expand': '展开分组',
       'group.dissolve': '解散分组',
+      'group.newSubgroup': '新建子分组',
+      'group.subgroupCreated': '已新建子分组',
+      'group.moveLabel': '移动到分组',
+      'group.moveToGroup': '移入「{name}」',
+      'group.moveOut': '移出分组',
+      'group.moved': '已移动分组',
       'session.menu': '会话操作',
       'session.pin': '置顶会话',
       'session.unpin': '取消置顶',
@@ -242,6 +269,7 @@ window.__ModuleLoader__.load({
       'notice.groupDissolved': '已解散分组',
       'notice.archived': '会话已归档',
       'notice.reordered': '已调整顺序',
+      'notice.groupDepthLimit': '分组最多嵌套 3 层，无法继续拖入',
       'notice.sessionCreated': '已新建会话',
       'notice.newSessionFailed': '新建会话失败：{reason}',
       'notice.sameWorkspace': '只能在本工作区内建立分组',
@@ -356,9 +384,20 @@ window.__ModuleLoader__.load({
       'group.newSession': 'New session in group',
       'group.rename': 'Rename group',
       'group.color': 'Group color',
+      'group.rgb': 'RGB',
+      'group.rgbTitle': 'Custom RGB color',
+      'group.rgbApply': 'Apply',
+      'group.rgbCancel': 'Cancel',
+      'group.rgbInvalid': 'Enter integers from 0 to 255',
       'group.collapse': 'Collapse group',
       'group.expand': 'Expand group',
       'group.dissolve': 'Dissolve group',
+      'group.newSubgroup': 'New subgroup',
+      'group.subgroupCreated': 'Subgroup created',
+      'group.moveLabel': 'Move to group',
+      'group.moveToGroup': 'Move into “{name}”',
+      'group.moveOut': 'Move out of group',
+      'group.moved': 'Group moved',
       'session.menu': 'Session actions',
       'session.pin': 'Pin session',
       'session.unpin': 'Unpin session',
@@ -375,6 +414,7 @@ window.__ModuleLoader__.load({
       'notice.groupDissolved': 'Group dissolved',
       'notice.archived': 'Session archived',
       'notice.reordered': 'Order updated',
+      'notice.groupDepthLimit': 'Groups can be nested up to 3 levels',
       'notice.sessionCreated': 'Session created',
       'notice.newSessionFailed': 'Could not create session: {reason}',
       'notice.sameWorkspace': 'Groups stay inside one workspace',
@@ -416,7 +456,7 @@ window.__ModuleLoader__.load({
     }
 
     function loadPrefs() {
-      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, childOrders: {}, hideArchived: true, workspaceTree: false, flatList: false };
+      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, childOrders: {}, groupOrders: {}, hideArchived: true, workspaceTree: false, flatList: false };
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (!raw) return empty;
@@ -433,22 +473,26 @@ window.__ModuleLoader__.load({
               const name = typeof item.name === 'string' && item.name.trim()
                 ? item.name.trim().slice(0, 60)
                 : '组';
-              const color = GROUP_COLORS.includes(item.color)
-                ? item.color
-                : GROUP_COLORS[clean.length % GROUP_COLORS.length];
+              const normalizedColor = typeof item.color === 'string' && /^#[0-9a-f]{6}$/i.test(item.color.trim())
+                ? item.color.trim().toLowerCase()
+                : null;
+              const color = normalizedColor
+                ?? GROUP_COLORS[clean.length % GROUP_COLORS.length];
               const sessionIds = Array.isArray(item.sessionIds)
                 ? [...new Set(item.sessionIds.filter((id) => typeof id === 'string' && id.length > 0))]
                 : [];
-              if (sessionIds.length === 0) continue;
               clean.push({
                 id: item.id,
                 name,
                 color,
                 collapsed: item.collapsed === true,
+                parentGroupId: typeof item.parentGroupId === 'string' && item.parentGroupId.length > 0
+                  ? item.parentGroupId
+                  : undefined,
                 sessionIds,
               });
             }
-            if (clean.length > 0) groups[workspaceId] = clean;
+            if (clean.length > 0) groups[workspaceId] = sanitizeGroupParents(clean);
           }
         }
         const collapsedWorkspaces = {};
@@ -481,12 +525,21 @@ window.__ModuleLoader__.load({
             if (clean.length > 0) childOrders[workspaceId] = clean;
           }
         }
+        const groupOrders = {};
+        if (parsed.groupOrders && typeof parsed.groupOrders === 'object') {
+          for (const [groupId, order] of Object.entries(parsed.groupOrders)) {
+            if (!groupId || !Array.isArray(order)) continue;
+            const clean = [...new Set(order.filter((key) => typeof key === 'string' && key.length > 0))];
+            if (clean.length > 0) groupOrders[groupId] = clean;
+          }
+        }
         return {
           groups,
           collapsedWorkspaces,
           manualOrders,
           topOrders,
           childOrders,
+          groupOrders,
           hideArchived: parsed.hideArchived !== false,
           workspaceTree: parsed.workspaceTree === true && parsed.flatList !== true,
           flatList: parsed.flatList === true,
@@ -527,10 +580,19 @@ window.__ModuleLoader__.load({
         }
         changed = true;
         const sessionIds = group.sessionIds.filter((id) => id !== sessionId);
-        if (sessionIds.length > 0) next.push({ ...group, sessionIds });
+        const hasChildren = groups.some((candidate) => candidate.parentGroupId === group.id);
+        if (sessionIds.length > 0 || hasChildren) next.push({ ...group, sessionIds });
       }
       if (!changed) return prefs;
-      return updateGroups(prefs, workspaceId, next);
+      const groupOrders = { ...(prefs.groupOrders ?? {}) };
+      const sessionKey = topKeyOfSession(sessionId);
+      for (const [groupId, order] of Object.entries(groupOrders)) {
+        if (!Array.isArray(order) || !order.includes(sessionKey)) continue;
+        const kept = order.filter((key) => key !== sessionKey);
+        if (kept.length > 0) groupOrders[groupId] = kept;
+        else delete groupOrders[groupId];
+      }
+      return updateGroups({ ...prefs, groupOrders }, workspaceId, next);
     }
 
     function setManualOrder(prefs, workspaceId, order) {
@@ -617,6 +679,7 @@ window.__ModuleLoader__.load({
         name: makeName(groups.length),
         color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
         collapsed: false,
+        parentGroupId: null,
         sessionIds: [...new Set(sessionIds)],
       };
       return updateGroups(prefs, workspaceId, [...groups, group]);
@@ -629,6 +692,7 @@ window.__ModuleLoader__.load({
         name: makeName(groups.length),
         color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
         collapsed: false,
+        parentGroupId: null,
         sessionIds: [...new Set(sessionIds)],
       };
       let next = updateGroups(prefs, workspaceId, [...groups, group]);
@@ -698,6 +762,173 @@ window.__ModuleLoader__.load({
       return parents;
     }
 
+    function sanitizeGroupParents(groups) {
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      const next = groups.map((group) => ({ ...group }));
+      for (const group of next) {
+        if (!group.parentGroupId || !byId.has(group.parentGroupId) || group.parentGroupId === group.id) {
+          group.parentGroupId = undefined;
+        }
+      }
+      for (const group of next) {
+        let depth = 1;
+        let parentId = group.parentGroupId;
+        const seen = new Set([group.id]);
+        while (parentId !== undefined) {
+          if (seen.has(parentId)) {
+            group.parentGroupId = undefined;
+            break;
+          }
+          seen.add(parentId);
+          depth += 1;
+          if (depth > 3) {
+            group.parentGroupId = undefined;
+            break;
+          }
+          parentId = byId.get(parentId)?.parentGroupId;
+        }
+      }
+      return next;
+    }
+
+    function pruneEmptyGroupLeaves(groups) {
+      let current = groups;
+      let changed = true;
+      while (changed) {
+        changed = false;
+        const parents = new Set(current.map((group) => group.parentGroupId).filter(Boolean));
+        const next = current.filter((group) => (
+          group.sessionIds.length > 0 || parents.has(group.id) || group.parentGroupId
+        ));
+        if (next.length !== current.length) {
+          current = next;
+          changed = true;
+        }
+      }
+      return current;
+    }
+
+    function groupDepth(groups, groupId) {
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      let depth = 0;
+      let current = groupId;
+      const seen = new Set();
+      while (current != null && !seen.has(current)) {
+        seen.add(current);
+        depth += 1;
+        current = byId.get(current)?.parentGroupId;
+      }
+      return depth;
+    }
+
+    function groupHeight(groups, groupId) {
+      const children = new Map();
+      for (const group of groups) {
+        if (!group.parentGroupId) continue;
+        const list = children.get(group.parentGroupId) ?? [];
+        list.push(group.id);
+        children.set(group.parentGroupId, list);
+      }
+      const visit = (id, seen) => {
+        if (seen.has(id)) return 1;
+        const nextSeen = new Set(seen);
+        nextSeen.add(id);
+        const descendants = children.get(id) ?? [];
+        if (descendants.length === 0) return 1;
+        return 1 + Math.max(...descendants.map((child) => visit(child, nextSeen)));
+      };
+      return visit(groupId, new Set());
+    }
+
+    function groupIsDescendant(groups, groupId, ancestorId) {
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      let current = byId.get(groupId)?.parentGroupId;
+      const seen = new Set();
+      while (current != null && !seen.has(current)) {
+        if (current === ancestorId) return true;
+        seen.add(current);
+        current = byId.get(current)?.parentGroupId;
+      }
+      return false;
+    }
+
+    function canNestGroup(groups, sourceId, targetId) {
+      if (!targetId || sourceId === targetId) return false;
+      if (groupIsDescendant(groups, targetId, sourceId)) return false;
+      return groupDepth(groups, targetId) + groupHeight(groups, sourceId) <= 3;
+    }
+
+    function setGroupOrder(prefs, groupId, order) {
+      const groupOrders = { ...(prefs.groupOrders ?? {}) };
+      const clean = [...new Set(order)];
+      if (clean.length > 0) groupOrders[groupId] = clean;
+      else delete groupOrders[groupId];
+      return { ...prefs, groupOrders };
+    }
+
+    function resolveGroupOrder(prefs, groupId, sessionIds, childIds) {
+      const defaults = [
+        ...sessionIds.map((id) => topKeyOfSession(id)),
+        ...childIds.map((id) => topKeyOfGroup(id)),
+      ];
+      const saved = prefs.groupOrders?.[groupId];
+      if (!Array.isArray(saved) || saved.length === 0) return defaults;
+      const valid = new Set(defaults);
+      const seen = new Set();
+      const ordered = [];
+      for (const key of saved) {
+        if (!valid.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        ordered.push(key);
+      }
+      for (const key of defaults) {
+        if (!seen.has(key)) ordered.push(key);
+      }
+      return ordered;
+    }
+
+    function defaultGroupOrder(groups, groupId) {
+      const group = groups.find((item) => item.id === groupId);
+      if (!group) return [];
+      return [
+        ...group.sessionIds.map((id) => topKeyOfSession(id)),
+        ...groups.filter((item) => item.parentGroupId === groupId).map((item) => topKeyOfGroup(item.id)),
+      ];
+    }
+
+    function createSubgroup(prefs, workspaceId, parentGroupId, sessionIds, makeName) {
+      const groups = prefs.groups[workspaceId] ?? [];
+      const parent = groups.find((group) => group.id === parentGroupId);
+      if (!parent || sessionIds.length < 2) return prefs;
+      const members = new Set(sessionIds);
+      const next = groups.map((group) => (
+        group.id === parentGroupId
+          ? { ...group, sessionIds: group.sessionIds.filter((id) => !members.has(id)) }
+          : group
+      ));
+      const group = {
+        id: newGroupId(),
+        name: makeName(next.length),
+        color: GROUP_COLORS[next.length % GROUP_COLORS.length],
+        collapsed: false,
+        parentGroupId,
+        sessionIds: [...new Set(sessionIds)],
+      };
+      let result = updateGroups(prefs, workspaceId, [...next, group]);
+      const parentOrder = prefs.groupOrders?.[parentGroupId];
+      if (Array.isArray(parentOrder)) {
+        const parentGroup = next.find((item) => item.id === parentGroupId);
+        const childIds = next.filter((item) => item.parentGroupId === parentGroupId).map((item) => item.id);
+        const order = resolveGroupOrder(prefs, parentGroupId, parentGroup?.sessionIds ?? [], childIds)
+          .filter((key) => (key.startsWith('g:')
+            ? key !== topKeyOfGroup(group.id)
+            : !members.has(key.slice(2))));
+        order.push(topKeyOfGroup(group.id));
+        result = setGroupOrder(result, parentGroupId, order);
+      }
+      return result;
+    }
+
     function insertIntoGroup(prefs, workspaceId, groupId, sessionId, anchorId, position) {
       const groups = prefs.groups[workspaceId];
       if (!Array.isArray(groups)) return prefs;
@@ -714,7 +945,21 @@ window.__ModuleLoader__.load({
         return { ...group, sessionIds };
       });
       if (!found) return prefs;
-      return updateGroups(prefs, workspaceId, next);
+      let result = updateGroups(prefs, workspaceId, next);
+      const target = next.find((group) => group.id === groupId);
+      const savedOrder = prefs.groupOrders?.[groupId];
+      if (target && Array.isArray(savedOrder)) {
+        const childIds = next.filter((group) => group.parentGroupId === groupId).map((group) => group.id);
+        const order = resolveGroupOrder(prefs, groupId, target.sessionIds, childIds)
+          .filter((key) => key !== topKeyOfSession(sessionId));
+        const anchorKey = anchorId ? topKeyOfSession(anchorId) : null;
+        let index = anchorKey ? order.indexOf(anchorKey) : -1;
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfSession(sessionId));
+        result = setGroupOrder(result, groupId, order);
+      }
+      return result;
     }
 
     function patchGroup(prefs, workspaceId, groupId, patch) {
@@ -733,9 +978,60 @@ window.__ModuleLoader__.load({
     function dissolveGroup(prefs, workspaceId, groupId) {
       const groups = prefs.groups[workspaceId];
       if (!Array.isArray(groups)) return prefs;
-      const next = groups.filter((group) => group.id !== groupId);
-      if (next.length === groups.length) return prefs;
-      return updateGroups(prefs, workspaceId, next);
+      const target = groups.find((group) => group.id === groupId);
+      if (!target) return prefs;
+      const parentId = target.parentGroupId && groups.some((group) => group.id === target.parentGroupId)
+        ? target.parentGroupId
+        : null;
+      const promoted = groups.filter((group) => group.parentGroupId === groupId);
+      const next = groups
+        .filter((group) => group.id !== groupId)
+        .map((group) => {
+          if (group.parentGroupId === groupId) {
+            return { ...group, parentGroupId: parentId ?? undefined };
+          }
+          if (parentId && group.id === parentId) {
+            const sessionIds = [...group.sessionIds];
+            for (const sessionId of target.sessionIds) {
+              if (!sessionIds.includes(sessionId)) sessionIds.push(sessionId);
+            }
+            return { ...group, sessionIds };
+          }
+          return group;
+        });
+      let result = updateGroups(prefs, workspaceId, next);
+      const parentOrder = parentId ? prefs.groupOrders?.[parentId] : null;
+      if (Array.isArray(parentOrder)) {
+        const targetOrder = resolveGroupOrder(
+          prefs,
+          groupId,
+          target.sessionIds,
+          promoted.map((group) => group.id),
+        );
+        const replacement = targetOrder;
+        const nextParentOrder = [];
+        for (const key of parentOrder) {
+          if (key === topKeyOfGroup(groupId)) nextParentOrder.push(...replacement);
+          else if (!key.startsWith('g:') || next.some((group) => group.id === key.slice(2))) nextParentOrder.push(key);
+        }
+        for (const key of replacement) {
+          if (!nextParentOrder.includes(key)) nextParentOrder.push(key);
+        }
+        result = setGroupOrder(result, parentId, nextParentOrder);
+      }
+      const groupOrders = { ...(result.groupOrders ?? {}) };
+      delete groupOrders[groupId];
+      result = { ...result, groupOrders };
+      let order = (result.topOrders?.[workspaceId] ?? []).filter((key) => key !== topKeyOfGroup(groupId));
+      if (!parentId) {
+        for (const group of promoted) {
+          if (!order.includes(topKeyOfGroup(group.id))) {
+            order.push(topKeyOfGroup(group.id));
+          }
+        }
+      }
+      result = setTopOrder(result, workspaceId, order);
+      return result;
     }
 
     function pinnedFirst(sessionIds, pinnedSessionIds) {
@@ -990,7 +1286,8 @@ window.__ModuleLoader__.load({
     /* ── styles ────────────────────────────────────────────────────── */
 
     const CSS = `
-      .dsg-root{display:flex;flex-direction:column;flex:1;min-height:0;gap:2px;color:var(--dsw-alias-label-primary);font-size:14px}
+      .dsg-toast{position:fixed;transform:translateX(-50%);z-index:80;max-width:min(320px,calc(100vw - 32px));box-sizing:border-box;padding:8px 12px;border-radius:8px;background:var(--dsw-alias-bg-elevated);color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:12px;line-height:18px;text-align:center;pointer-events:none}
+      .dsg-root{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;gap:2px;color:var(--dsw-alias-label-primary);font-size:14px}
       .dsg-header{display:flex;align-items:center;gap:2px;flex:none;height:36px;padding:0 2px 0 8px;color:var(--dsw-alias-label-tertiary)}
       .dsg-title{flex:1;min-width:0;font-size:14px;font-weight:400;line-height:20px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .dsg-iconBtn{width:28px;height:28px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
@@ -1048,6 +1345,7 @@ window.__ModuleLoader__.load({
       body[data-ds-dark-theme] .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
       body[data-ds-dark-theme] .dsg-groupDot{box-shadow:0 0 0 2px color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
 
+      .dsg-groupBody>.dsg-group{margin-left:12px}
       .dsg-groupBody>.dsg-sessionRow{padding-left:26px}
       .dsg-groupBody>.dsg-sessionRow.hasStatus{padding-left:10px}
       .dsg-wsBody>.dsg-sessionRow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
@@ -1091,6 +1389,7 @@ window.__ModuleLoader__.load({
       .dsg-simpleList>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
       .dsg-ungroupedZone.dsg-zoneHint{min-height:30px;border:1px dashed var(--dsw-alias-border-l2);align-items:center;justify-content:center}
       .dsg-ungroupedZone.dsg-zoneDrop{border-color:transparent;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)}
+      .dsg-ungroupedZone.dsg-zoneDropEnd{box-shadow:inset 0 2px 0 var(--dsw-alias-state-business-primary)}
       .dsg-zoneText{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;padding:6px 0}
       .dsg-ungroupedHeader{display:flex;align-items:center;gap:7px;height:30px;padding:0 8px 0 10px;flex:none;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:500}
       .dsg-flatList{display:flex;flex-direction:column;gap:2px;padding:1px 0 8px}
@@ -1179,10 +1478,27 @@ window.__ModuleLoader__.load({
       .dsg-layoutBtn[aria-pressed=true]{color:var(--dsw-alias-state-business-primary)}
       .dsg-layoutBtn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
       .dsg-layoutCheck{width:12px;height:12px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
+      .dsg-menuScroll{max-height:120px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent;margin:0 -2px;padding:0 2px}
       .dsg-menuSeparator{height:1px;margin:4px 6px;background:var(--dsw-alias-border-l1)}
-      .dsg-swatches{display:flex;align-items:center;gap:7px;padding:3px 9px 6px;flex-wrap:wrap}
+      .dsg-swatches{display:flex;align-items:center;gap:6px;padding:3px 9px 6px;flex-wrap:wrap}
       .dsg-swatch{width:17px;height:17px;padding:0;border-radius:50%;border:2px solid transparent;background:var(--dsg-swatch-color-light);cursor:pointer;flex:none}
       body[data-ds-dark-theme] .dsg-swatch{background:var(--dsg-swatch-color-dark,var(--dsg-swatch-color-light))}
+      .dsg-rgbTrigger{height:17px;flex:none;padding:0 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:9.5px;line-height:15px;letter-spacing:.03em;cursor:pointer}
+      .dsg-rgbTrigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-rgbTrigger.selected{border-color:var(--dsw-alias-label-primary);color:var(--dsw-alias-label-primary)}
+      .dsg-rgbTrigger:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-rgbEditor{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:3px 9px 7px;border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-rgbPreview{width:18px;height:18px;flex:none;border-radius:50%;border:1px solid var(--dsw-alias-border-l2);box-sizing:border-box}
+      .dsg-rgbFields{display:flex;align-items:center;gap:5px;flex:1;min-width:0}
+      .dsg-rgbField{display:flex;align-items:center;gap:3px;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:14px}
+      .dsg-rgbInput{width:35px;height:22px;box-sizing:border-box;padding:0 3px;border:1px solid var(--dsw-alias-border-l2);border-radius:4px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:20px;text-align:center;outline:none}
+      .dsg-rgbInput:focus{border-color:var(--dsw-alias-state-business-primary)}
+      .dsg-rgbActions{display:flex;align-items:center;gap:4px;flex:none;margin-left:auto}
+      .dsg-rgbAction{height:22px;padding:0 8px;border:none;border-radius:4px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:22px;cursor:pointer}
+      .dsg-rgbAction:hover{background:var(--dsw-alias-interactive-bg-active)}
+      .dsg-rgbAction.primary{background:var(--dsw-alias-button-info-fill);color:#fff}
+      .dsg-rgbAction.primary:hover{filter:brightness(1.06)}
+      .dsg-rgbError{flex-basis:100%;color:var(--dsw-alias-state-error-primary);font-size:10.5px;line-height:14px;padding-left:24px}
       .dsg-swatch.selected{border-color:var(--dsw-alias-label-primary);box-shadow:0 0 0 1px var(--dsw-alias-bg-overlay)}
       .dsg-swatch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
     `;
@@ -1554,6 +1870,7 @@ window.__ModuleLoader__.load({
         count,
         collapsed,
         selected,
+        draggable,
         statuses,
         dropActive,
         dropTopPosition,
@@ -1593,7 +1910,7 @@ window.__ModuleLoader__.load({
           className: classes.join(' '),
           role: 'button',
           tabIndex: 0,
-          draggable: true,
+          draggable: draggable !== false,
           'data-group-id': group.id,
           'aria-label': tr('group.aria', { name: group.name }),
           'aria-expanded': !collapsed,
@@ -1610,7 +1927,7 @@ window.__ModuleLoader__.load({
           onDragOver,
           onDrop,
           onDragStart: (event) => {
-            if (blockDragRef.current) {
+            if (blockDragRef.current || draggable === false) {
               event.preventDefault();
               return;
             }
@@ -2238,12 +2555,15 @@ window.__ModuleLoader__.load({
       const [menu, setMenu] = React.useState(null);
       const [viewMenu, setViewMenu] = React.useState(null);
       const [notice, setNotice] = React.useState(null);
+      const [colorEditor, setColorEditor] = React.useState(null);
+      const [toastPosition, setToastPosition] = React.useState(null);
       const [addingWorkspace, setAddingWorkspace] = React.useState(false);
       const [addWorkspaceDialog, setAddWorkspaceDialog] = React.useState(null);
       const [overflowExpanded, setOverflowExpanded] = React.useState({});
       const [dragInfo, setDragInfo] = React.useState(null);
       const [dropHint, setDropHint] = React.useState(null);
       const dragRef = React.useRef(null);
+      const rootRef = React.useRef(null);
       const noticeTimerRef = React.useRef(null);
       const pendingGroupSessionRef = React.useRef(null);
 
@@ -2266,7 +2586,11 @@ window.__ModuleLoader__.load({
         [t],
       );
 
-      const notify = React.useCallback((message) => {
+      const notify = React.useCallback((message, important = false) => {
+        if (important !== true) {
+          setNotice(null);
+          return;
+        }
         setNotice(message);
         if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
         noticeTimerRef.current = window.setTimeout(() => {
@@ -2274,6 +2598,27 @@ window.__ModuleLoader__.load({
           noticeTimerRef.current = null;
         }, 2800);
       }, []);
+
+      React.useEffect(() => {
+        if (!notice) {
+          setToastPosition(null);
+          return undefined;
+        }
+        const updatePosition = () => {
+          const element = rootRef.current;
+          if (!element) return;
+          const rect = element.getBoundingClientRect();
+          if (rect.width <= 0) return;
+          setToastPosition({
+            left: Math.round(rect.left + rect.width / 2),
+            bottom: 48,
+            maxWidth: Math.max(160, Math.round(rect.width - 24)),
+          });
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        return () => window.removeEventListener('resize', updatePosition);
+      }, [notice]);
 
       React.useEffect(() => {
         savePrefs(prefs);
@@ -2366,13 +2711,16 @@ window.__ModuleLoader__.load({
             for (const group of groups) {
               const sessionIds = group.sessionIds.filter((id) => members.has(id));
               if (sessionIds.length !== group.sessionIds.length) changed = true;
-              if (sessionIds.length === 0) {
+              const hasChildren = groups.some((candidate) => candidate.parentGroupId === group.id);
+              if (sessionIds.length === 0 && !hasChildren && !group.parentGroupId) {
                 changed = true;
                 continue;
               }
               kept.push(sessionIds.length === group.sessionIds.length ? group : { ...group, sessionIds });
             }
-            if (kept.length > 0) nextGroups[workspaceId] = kept;
+            const safeGroups = pruneEmptyGroupLeaves(sanitizeGroupParents(kept));
+            if (safeGroups.length !== kept.length) changed = true;
+            if (safeGroups.length > 0) nextGroups[workspaceId] = safeGroups;
           }
           const nextCollapsed = {};
           for (const [workspaceId, value] of Object.entries(previous.collapsedWorkspaces ?? {})) {
@@ -2397,7 +2745,7 @@ window.__ModuleLoader__.load({
               changed = true;
               continue;
             }
-            const groupIds = new Set((nextGroups[workspaceId] ?? []).map((group) => group.id));
+            const groupIds = new Set((nextGroups[workspaceId] ?? []).filter((group) => !group.parentGroupId).map((group) => group.id));
             const kept = [];
             for (const key of order) {
               if (key.startsWith('g:') && groupIds.has(key.slice(2))) kept.push(key);
@@ -2417,6 +2765,35 @@ window.__ModuleLoader__.load({
             if (kept.length !== order.length) changed = true;
             if (kept.length > 0) nextChildOrders[parentId] = kept;
           }
+          const groupEntries = new Map();
+          for (const groups of Object.values(nextGroups)) {
+            for (const group of groups) groupEntries.set(group.id, { group, groups });
+          }
+          const nextGroupOrders = {};
+          for (const [groupId, order] of Object.entries(previous.groupOrders ?? {})) {
+            const entry = groupEntries.get(groupId);
+            if (!entry || !Array.isArray(order)) {
+              changed = true;
+              continue;
+            }
+            const validKeys = new Set([
+              ...entry.group.sessionIds.map((sessionId) => topKeyOfSession(sessionId)),
+              ...entry.groups
+                .filter((group) => group.parentGroupId === groupId)
+                .map((group) => topKeyOfGroup(group.id)),
+            ]);
+            const seen = new Set();
+            const kept = [];
+            for (const key of order) {
+              if (!validKeys.has(key) || seen.has(key)) {
+                changed = true;
+                continue;
+              }
+              seen.add(key);
+              kept.push(key);
+            }
+            if (kept.length > 0) nextGroupOrders[groupId] = kept;
+          }
           if (!changed) return previous;
           return {
             groups: nextGroups,
@@ -2424,6 +2801,7 @@ window.__ModuleLoader__.load({
             manualOrders: nextManualOrders,
             topOrders: nextTopOrders,
             childOrders: nextChildOrders,
+            groupOrders: nextGroupOrders,
             hideArchived: previous.hideArchived !== false,
             workspaceTree: previous.workspaceTree === true,
             flatList: previous.flatList === true,
@@ -2506,6 +2884,7 @@ window.__ModuleLoader__.load({
         const nextGroups = { ...(previous.groups ?? {}) };
         const nextTopOrders = { ...(previous.topOrders ?? {}) };
         const nextChildOrders = { ...(previous.childOrders ?? {}) };
+        const nextGroupOrders = { ...(previous.groupOrders ?? {}) };
         const visited = new Set();
         const visit = (workspaceId) => {
           if (visited.has(workspaceId)) return;
@@ -2515,14 +2894,42 @@ window.__ModuleLoader__.load({
           const groups = Array.isArray(nextGroups[workspaceId])
             ? nextGroups[workspaceId].map((group) => ({ ...group, sessionIds: [...group.sessionIds] }))
             : [];
+          for (const group of groups) delete nextGroupOrders[group.id];
+          const groupById = new Map(groups.map((group) => [group.id, group]));
+          const groupChildren = new Map();
+          for (const group of groups) {
+            const parentId = group.parentGroupId && groupById.has(group.parentGroupId)
+              ? group.parentGroupId
+              : null;
+            const siblings = groupChildren.get(parentId) ?? [];
+            siblings.push(group);
+            groupChildren.set(parentId, siblings);
+          }
+          const groupLatestCache = new Map();
+          const latestOfGroup = (groupId, seen = new Set()) => {
+            if (groupLatestCache.has(groupId)) return groupLatestCache.get(groupId);
+            if (seen.has(groupId)) return 0;
+            seen.add(groupId);
+            const group = groupById.get(groupId);
+            let latest = 0;
+            for (const sessionId of group?.sessionIds ?? []) {
+              latest = Math.max(latest, updatedAtOf(sessionId));
+            }
+            for (const child of groupChildren.get(groupId) ?? []) {
+              latest = Math.max(latest, latestOfGroup(child.id, seen));
+            }
+            seen.delete(groupId);
+            groupLatestCache.set(groupId, latest);
+            return latest;
+          };
           const groupedIds = new Set(groups.flatMap((group) => group.sessionIds));
           const ungrouped = (workspace.sessionIds ?? []).filter((sessionId) => !groupedIds.has(sessionId));
           const topItems = [
-            ...groups.map((group) => ({
+            ...(groupChildren.get(null) ?? []).map((group) => ({
               kind: 'group',
               id: group.id,
               title: group.name,
-              time: group.sessionIds.reduce((latest, sessionId) => Math.max(latest, updatedAtOf(sessionId)), 0),
+              time: latestOfGroup(group.id),
             })),
             ...ungrouped.map((sessionId) => ({
               kind: 'session',
@@ -2537,16 +2944,31 @@ window.__ModuleLoader__.load({
           ));
           if (topKeys.length > 0) nextTopOrders[workspaceId] = topKeys;
           else delete nextTopOrders[workspaceId];
-          const sortedGroups = groups.map((group) => {
+          const sortedById = new Map(groups.map((group) => {
             const members = group.sessionIds.map((sessionId) => ({
               id: sessionId,
               title: titleOf(sessionId),
               time: updatedAtOf(sessionId),
             }));
             members.sort(compare);
-            return { ...group, sessionIds: members.map((member) => member.id) };
-          });
-          if (sortedGroups.length > 0) nextGroups[workspaceId] = sortedGroups;
+            return [group.id, { ...group, sessionIds: members.map((member) => member.id) }];
+          }));
+          const orderedGroups = [];
+          const appendGroupChildren = (parentId) => {
+            const siblings = (groupChildren.get(parentId) ?? [])
+              .map((group) => ({
+                group: sortedById.get(group.id),
+                title: group.name,
+                time: latestOfGroup(group.id),
+              }))
+              .sort(compare);
+            for (const sibling of siblings) {
+              orderedGroups.push(sibling.group);
+              appendGroupChildren(sibling.group.id);
+            }
+          };
+          appendGroupChildren(null);
+          if (orderedGroups.length > 0) nextGroups[workspaceId] = orderedGroups;
           else delete nextGroups[workspaceId];
           const children = (childrenByParent.get(workspaceId) ?? []).map((childId) => {
             const child = byId.get(childId);
@@ -2573,6 +2995,7 @@ window.__ModuleLoader__.load({
           groups: nextGroups,
           topOrders: nextTopOrders,
           childOrders: nextChildOrders,
+          groupOrders: nextGroupOrders,
         };
       };
 
@@ -2603,17 +3026,54 @@ window.__ModuleLoader__.load({
         const storedGroups = Array.isArray(prefs.groups?.[workspace.workspaceId])
           ? prefs.groups[workspace.workspaceId]
           : [];
-        const groups = [];
+        const storedById = new Map(storedGroups.map((group) => [group.id, group]));
+        const directMembers = new Map();
+        const childrenOfGroup = new Map();
+        const storedRoots = [];
         for (const group of storedGroups) {
-          const members = group.sessionIds.filter((id) => isVisible(id) && memberIds.includes(id));
-          if (members.length === 0) continue;
-          const groupMatches = !query
-            || workspaceMatches
-            || group.name.toLowerCase().includes(query)
-            || members.some((id) => matches(id));
-          if (!groupMatches) continue;
-          groups.push({ group, members });
+          directMembers.set(group.id, group.sessionIds.filter((id) => isVisible(id) && memberIds.includes(id)));
+          const parentId = group.parentGroupId && storedById.has(group.parentGroupId)
+            ? group.parentGroupId
+            : undefined;
+          if (parentId === undefined) {
+            storedRoots.push(group);
+          } else {
+            const siblings = childrenOfGroup.get(parentId) ?? [];
+            siblings.push(group);
+            childrenOfGroup.set(parentId, siblings);
+          }
         }
+        const buildGroup = (group) => {
+          const direct = directMembers.get(group.id) ?? [];
+          const childResults = (childrenOfGroup.get(group.id) ?? [])
+            .map((child) => buildGroup(child))
+            .filter((result) => result !== null);
+          const nameMatches = Boolean(query) && group.name.toLowerCase().includes(query);
+          const memberMatches = direct.some((id) => matches(id));
+          const childMatches = childResults.some((result) => result.matched);
+          const matched = !query || workspaceMatches || nameMatches || memberMatches || childMatches;
+          if (!matched) return null;
+          const includeAll = !query || workspaceMatches || nameMatches || memberMatches;
+          const members = includeAll ? direct : direct.filter((id) => matches(id));
+          const children = includeAll
+            ? childResults.map((result) => result.item)
+            : childResults.filter((result) => result.matched).map((result) => result.item);
+          const hasStoredParent = group.parentGroupId && storedById.has(group.parentGroupId);
+          if (members.length === 0 && children.length === 0 && !hasStoredParent) return null;
+          const allMembers = [...members, ...children.flatMap((child) => child.allMembers)];
+          const item = {
+            group,
+            members,
+            children,
+            allMembers,
+            totalMembers: allMembers.length,
+          };
+          return { item, matched };
+        };
+        const groups = storedRoots
+          .map((group) => buildGroup(group))
+          .filter((result) => result !== null)
+          .map((result) => result.item);
         const groupedIds = new Set(storedGroups.flatMap((group) => group.sessionIds ?? []));
         const visibleUngroupedIds = memberIds.filter((id) => !groupedIds.has(id) && isVisible(id));
         const manualOrder = prefs.manualOrders?.[workspace.workspaceId];
@@ -2650,14 +3110,13 @@ window.__ModuleLoader__.load({
         const referenceIndex = new Map(referenceIds.map((id, index) => [id, index]));
         const defaultTopItems = [
           ...groups.map((item) => {
-            const indexes = item.members
+            const indexes = item.allMembers
               .map((id) => referenceIndex.get(id))
               .filter((index) => index !== undefined);
             return {
               kind: 'group',
               key: topKeyOfGroup(item.group.id),
-              group: item.group,
-              members: item.members,
+              node: item,
               sortIndex: indexes.length > 0 ? Math.min(...indexes) : Number.MAX_SAFE_INTEGER,
             };
           }),
@@ -2713,7 +3172,7 @@ window.__ModuleLoader__.load({
       const hasAnyGroup = Object.values(prefs.groups ?? {}).some((groups) => Array.isArray(groups) && groups.length > 0);
       const visibleCount = sections.reduce(
         (total, section) => total + section.ungrouped.length
-          + section.groups.reduce((sum, item) => sum + item.members.length, 0),
+          + section.groups.reduce((sum, item) => sum + item.totalMembers, 0),
         0,
       );
 
@@ -2758,7 +3217,10 @@ window.__ModuleLoader__.load({
         return [...ids];
       };
 
-      const closeMenu = React.useCallback(() => setMenu(null), []);
+      const closeMenu = React.useCallback(() => {
+        setMenu(null);
+        setColorEditor(null);
+      }, []);
 
       const clearDrag = React.useCallback(() => {
         dragRef.current = null;
@@ -2842,6 +3304,194 @@ window.__ModuleLoader__.load({
         notify(tr('notice.reordered'));
       };
 
+      const setGroupParent = (previous, workspaceId, groupId, parentId) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        const oldParent = source.parentGroupId ?? null;
+        const nextParent = parentId ?? null;
+        if (oldParent === nextParent) return previous;
+        let next = updateGroups(
+          previous,
+          workspaceId,
+          groups.map((group) => (
+            group.id === groupId ? { ...group, parentGroupId: nextParent } : group
+          )),
+        );
+        if (oldParent !== null) {
+          const parentOrder = next.groupOrders?.[oldParent];
+          if (Array.isArray(parentOrder)) {
+            next = setGroupOrder(
+              next,
+              oldParent,
+              parentOrder.filter((key) => key !== topKeyOfGroup(groupId)),
+            );
+          }
+        }
+        let order = [...(next.topOrders?.[workspaceId] ?? [])];
+        if (oldParent === null && nextParent !== null) {
+          order = order.filter((key) => key !== topKeyOfGroup(groupId));
+        } else if (oldParent !== null && nextParent === null && !order.includes(topKeyOfGroup(groupId))) {
+          order.push(topKeyOfGroup(groupId));
+        }
+        next = setTopOrder(next, workspaceId, order);
+        return next;
+      };
+
+      const moveGroupToRootAt = (previous, workspaceId, groupId, targetKey, position) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        let next = source.parentGroupId
+          ? setGroupParent(previous, workspaceId, groupId, null)
+          : previous;
+        const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+        const fallbackOrder = (section?.topItems ?? []).map((item) => item.key);
+        let order = [...(next.topOrders?.[workspaceId] ?? fallbackOrder)];
+        const key = topKeyOfGroup(groupId);
+        order = order.filter((item) => item !== key);
+        let index = targetKey === undefined ? order.length : order.indexOf(targetKey);
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, key);
+        return setTopOrder(next, workspaceId, order);
+      };
+
+      const nestGroup = (previous, workspaceId, groupId, targetGroupId) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        const sameParent = (source.parentGroupId ?? null) === targetGroupId;
+        if (!sameParent && !canPlaceGroupUnder(groups, groupId, targetGroupId)) return previous;
+        let next = setGroupParent(previous, workspaceId, groupId, targetGroupId);
+        const current = next.groups?.[workspaceId] ?? [];
+        const moved = current.find((group) => group.id === groupId);
+        if (!moved) return next;
+        const without = current.filter((group) => group.id !== groupId);
+        const targetIndex = without.findIndex((group) => group.id === targetGroupId);
+        without.splice(targetIndex === -1 ? without.length : targetIndex + 1, 0, moved);
+        next = updateGroups(next, workspaceId, without);
+        const target = without.find((group) => group.id === targetGroupId);
+        if (target) {
+          const childIds = without.filter((group) => group.parentGroupId === targetGroupId).map((group) => group.id);
+          const order = resolveGroupOrder(next, targetGroupId, target.sessionIds, childIds)
+            .filter((key) => key !== topKeyOfGroup(groupId));
+          order.push(topKeyOfGroup(groupId));
+          next = setGroupOrder(next, targetGroupId, order);
+        }
+        return next;
+      };
+
+      const reorderSiblingGroup = (previous, workspaceId, groupId, targetGroupId, position) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        const target = groups.find((group) => group.id === targetGroupId);
+        if (!source || !target) return previous;
+        const sourceParent = source.parentGroupId ?? null;
+        const targetParent = target.parentGroupId ?? null;
+        if (sourceParent !== targetParent) return previous;
+        if (sourceParent === null) {
+          const section = sections.find((candidate) => candidate.workspace?.workspaceId === workspaceId);
+          const fallbackOrder = (section?.topItems ?? []).map((item) => item.key);
+          let order = [...(previous.topOrders?.[workspaceId] ?? fallbackOrder)];
+          const key = topKeyOfGroup(groupId);
+          order = order.filter((item) => item !== key);
+          let index = order.indexOf(topKeyOfGroup(targetGroupId));
+          if (index === -1) index = order.length;
+          else if (position === 'after') index += 1;
+          order.splice(index, 0, key);
+          return setTopOrder(previous, workspaceId, order);
+        }
+        const parent = groups.find((group) => group.id === sourceParent);
+        const childIds = groups.filter((group) => group.parentGroupId === sourceParent).map((group) => group.id);
+        const order = resolveGroupOrder(previous, sourceParent, parent?.sessionIds ?? [], childIds)
+          .filter((key) => key !== topKeyOfGroup(groupId));
+        let index = order.indexOf(topKeyOfGroup(targetGroupId));
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfGroup(groupId));
+        return setGroupOrder(previous, sourceParent, order);
+      };
+
+      const insertGroupIntoGroupAt = (
+        previous,
+        workspaceId,
+        groupId,
+        targetGroupId,
+        anchorSessionId,
+        position,
+      ) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const source = groups.find((group) => group.id === groupId);
+        if (!source) return previous;
+        const sameParent = (source.parentGroupId ?? null) === targetGroupId;
+        if (!sameParent && !canPlaceGroupUnder(groups, groupId, targetGroupId)) return previous;
+        let next = setGroupParent(previous, workspaceId, groupId, targetGroupId);
+        const currentGroups = next.groups?.[workspaceId] ?? [];
+        const target = currentGroups.find((group) => group.id === targetGroupId);
+        if (!target) return previous;
+        const childIds = currentGroups
+          .filter((group) => group.parentGroupId === targetGroupId)
+          .map((group) => group.id);
+        const order = resolveGroupOrder(next, targetGroupId, target.sessionIds, childIds)
+          .filter((key) => key !== topKeyOfGroup(groupId));
+        let index = order.indexOf(topKeyOfSession(anchorSessionId));
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfGroup(groupId));
+        return setGroupOrder(next, targetGroupId, order);
+      };
+
+      const canPlaceGroupUnder = (groups, groupId, parentId) => {
+        if (!parentId) return true;
+        if (parentId === groupId || groupIsDescendant(groups, parentId, groupId)) return false;
+        return groupDepth(groups, parentId) + groupHeight(groups, groupId) <= 3;
+      };
+
+      const exceedsGroupDepth = (groups, groupId, parentId) => (
+        Boolean(parentId)
+        && groupDepth(groups, parentId) + groupHeight(groups, groupId) > 3
+      );
+
+      const insertGroupAsSibling = (previous, workspaceId, groupId, targetGroupId, position) => {
+        const groups = previous.groups?.[workspaceId] ?? [];
+        const target = groups.find((group) => group.id === targetGroupId);
+        if (!target) return previous;
+        const desiredParent = target.parentGroupId ?? null;
+        if (!canPlaceGroupUnder(groups, groupId, desiredParent)) return previous;
+        if (desiredParent === null) {
+          return moveGroupToRootAt(
+            previous,
+            workspaceId,
+            groupId,
+            topKeyOfGroup(targetGroupId),
+            position,
+          );
+        }
+        let next = setGroupParent(previous, workspaceId, groupId, desiredParent);
+        const currentGroups = next.groups?.[workspaceId] ?? [];
+        const parent = currentGroups.find((group) => group.id === desiredParent);
+        if (!parent) return previous;
+        const childIds = currentGroups
+          .filter((group) => group.parentGroupId === desiredParent)
+          .map((group) => group.id);
+        const order = resolveGroupOrder(next, desiredParent, parent.sessionIds, childIds)
+          .filter((key) => key !== topKeyOfGroup(groupId));
+        let index = order.indexOf(topKeyOfGroup(targetGroupId));
+        if (index === -1) index = order.length;
+        else if (position === 'after') index += 1;
+        order.splice(index, 0, topKeyOfGroup(groupId));
+        return setGroupOrder(next, desiredParent, order);
+      };
+
+      const groupDropZone = (event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+        if (ratio < 0.3) return 'before';
+        if (ratio > 0.7) return 'after';
+        return 'inside';
+      };
+
       const handleGroupDragStart = (event, workspaceId, groupId) => {
         if (event.target && typeof event.target.closest === 'function' && event.target.closest('button,input')) {
           event.preventDefault();
@@ -2877,7 +3527,19 @@ window.__ModuleLoader__.load({
         }
         const zone = rowDropZone(event);
         if (drag.kind === 'group') {
-          if (groupId) return;
+          if (groupId) {
+            const groups = prefs.groups?.[workspaceId] ?? [];
+            const source = groups.find((group) => group.id === drag.groupId);
+            if (!source) return;
+            const sameParent = (source.parentGroupId ?? null) === groupId;
+            if (!sameParent && !canPlaceGroupUnder(groups, drag.groupId, groupId)) return;
+            setDropHint({
+              kind: 'row',
+              id: targetSessionId,
+              position: zone === 'after' ? 'after' : 'before',
+            });
+            return;
+          }
           setDropHint({
             kind: 'top',
             key: topKeyOfSession(targetSessionId),
@@ -2887,11 +3549,16 @@ window.__ModuleLoader__.load({
           return;
         }
         if (groupId) {
-          setDropHint({
-            kind: 'row',
-            id: targetSessionId,
-            position: zone === 'after' ? 'after' : 'before',
-          });
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          if (zone === 'group' && drag.groupId === groupId && groupDepth(groups, groupId) < 3) {
+            setDropHint({ kind: 'rowGroup', id: targetSessionId });
+          } else {
+            setDropHint({
+              kind: 'row',
+              id: targetSessionId,
+              position: zone === 'after' ? 'after' : 'before',
+            });
+          }
         } else if (zone === 'group') {
           setDropHint({ kind: 'rowGroup', id: targetSessionId });
         } else {
@@ -2906,16 +3573,56 @@ window.__ModuleLoader__.load({
         event.stopPropagation();
         const zone = rowDropZone(event);
         if (drag.kind === 'group') {
-          if (groupId) return;
-          const key = drag.key;
+          if (groupId) {
+            const groups = prefs.groups?.[workspaceId] ?? [];
+            const source = groups.find((group) => group.id === drag.groupId);
+            const sameParent = source ? (source.parentGroupId ?? null) === groupId : false;
+            if (!sameParent && !canPlaceGroupUnder(groups, drag.groupId, groupId)) {
+              if (exceedsGroupDepth(groups, drag.groupId, groupId)) {
+                notify(tr('notice.groupDepthLimit'), true);
+              }
+              clearDrag();
+              return;
+            }
+            clearDrag();
+            setPrefs((previous) => insertGroupIntoGroupAt(
+              previous,
+              workspaceId,
+              drag.groupId,
+              groupId,
+              targetSessionId,
+              zone === 'after' ? 'after' : 'before',
+            ));
+            notify(tr('notice.reordered'));
+            return;
+          }
           clearDrag();
-          moveTopItem(workspaceId, key, topKeyOfSession(targetSessionId), zone === 'after' ? 'after' : 'before');
+          setPrefs((previous) => moveGroupToRootAt(
+            previous,
+            workspaceId,
+            drag.groupId,
+            topKeyOfSession(targetSessionId),
+            zone === 'after' ? 'after' : 'before',
+          ));
+          notify(tr('notice.reordered'));
           return;
         }
         const sourceId = drag.sessionId;
         const sourceGroupId = drag.groupId;
         clearDrag();
         if (groupId) {
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          if (zone === 'group' && sourceGroupId === groupId && groupDepth(groups, groupId) < 3) {
+            setPrefs((previous) => createSubgroup(
+              previous,
+              workspaceId,
+              groupId,
+              [targetSessionId, sourceId],
+              (index) => tr('group.defaultName', { n: index + 1 }),
+            ));
+            notify(tr('notice.grouped'));
+            return;
+          }
           const position = zone === 'after' ? 'after' : 'before';
           setPrefs((previous) => {
             const removed = removeSessionFromGroups(previous, workspaceId, sourceId);
@@ -2961,12 +3668,39 @@ window.__ModuleLoader__.load({
           /* ignore */
         }
         if (drag.kind === 'group') {
-          setDropHint({
-            kind: 'topGroup',
-            key: topKeyOfGroup(groupId),
-            workspaceId,
-            position: groupHeaderHalf(event),
-          });
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          const source = groups.find((group) => group.id === drag.groupId);
+          const target = groups.find((group) => group.id === groupId);
+          if (!source || !target) return;
+          const zone = groupDropZone(event);
+          if (zone === 'inside') {
+            if (canNestGroup(groups, source.id, target.id)) {
+              setDropHint({ kind: 'nestGroup', id: target.id, workspaceId });
+            } else {
+              setDropHint(null);
+            }
+            return;
+          }
+          const desiredParent = target.parentGroupId ?? null;
+          if (!canPlaceGroupUnder(groups, source.id, desiredParent)) {
+            setDropHint(null);
+            return;
+          }
+          if (desiredParent === null) {
+            setDropHint({
+              kind: 'topGroup',
+              key: topKeyOfGroup(target.id),
+              workspaceId,
+              position: zone === 'before' ? 'before' : 'after',
+            });
+          } else {
+            setDropHint({
+              kind: 'groupEdge',
+              id: target.id,
+              workspaceId,
+              position: zone === 'before' ? 'before' : 'after',
+            });
+          }
           return;
         }
         setDropHint({ kind: 'group', id: groupId });
@@ -2978,10 +3712,39 @@ window.__ModuleLoader__.load({
         event.preventDefault();
         event.stopPropagation();
         if (drag.kind === 'group') {
-          const key = drag.key;
-          const position = groupHeaderHalf(event);
+          const groups = prefs.groups?.[workspaceId] ?? [];
+          const source = groups.find((group) => group.id === drag.groupId);
+          const target = groups.find((group) => group.id === groupId);
+          if (!source || !target) return;
+          const zone = groupDropZone(event);
+          if (zone === 'inside') {
+            if (canNestGroup(groups, source.id, target.id)) {
+              setPrefs((previous) => nestGroup(previous, workspaceId, source.id, target.id));
+              notify(tr('group.moved'));
+            } else if (exceedsGroupDepth(groups, source.id, target.id)) {
+              notify(tr('notice.groupDepthLimit'), true);
+            }
+            clearDrag();
+            return;
+          }
+          const desiredParent = target.parentGroupId ?? null;
+          if (!canPlaceGroupUnder(groups, source.id, desiredParent)) {
+            if (exceedsGroupDepth(groups, source.id, desiredParent)) {
+              notify(tr('notice.groupDepthLimit'), true);
+            }
+            clearDrag();
+            return;
+          }
+          const sourceParent = source.parentGroupId ?? null;
           clearDrag();
-          moveTopItem(workspaceId, key, topKeyOfGroup(groupId), position);
+          setPrefs((previous) => insertGroupAsSibling(
+            previous,
+            workspaceId,
+            source.id,
+            target.id,
+            zone === 'after' ? 'after' : 'before',
+          ));
+          notify(tr(sourceParent === desiredParent ? 'notice.reordered' : 'group.moved'));
           return;
         }
         const sourceId = drag.sessionId;
@@ -3014,9 +3777,15 @@ window.__ModuleLoader__.load({
         event.preventDefault();
         event.stopPropagation();
         if (drag.kind === 'group') {
-          const key = drag.key;
           clearDrag();
-          moveTopItem(workspaceId, key, undefined, 'end');
+          setPrefs((previous) => moveGroupToRootAt(
+            previous,
+            workspaceId,
+            drag.groupId,
+            undefined,
+            'end',
+          ));
+          notify(tr('group.moved'));
           return;
         }
         const sourceId = drag.sessionId;
@@ -3224,6 +3993,7 @@ window.__ModuleLoader__.load({
       const openGroupMenu = (event, workspaceId, groupId) => {
         event.stopPropagation();
         const rect = event.currentTarget.getBoundingClientRect();
+        setColorEditor(null);
         setMenu({
           kind: 'group',
           workspaceId,
@@ -3349,6 +4119,109 @@ window.__ModuleLoader__.load({
         closeMenu();
         setPrefs((previous) => dissolveGroup(previous, workspaceId, groupId));
         notify(tr('notice.groupDissolved'));
+      };
+
+      const openColorEditor = (workspaceId, groupId, color) => {
+        const rgb = hexToRgb(color) ?? { r: 128, g: 128, b: 128 };
+        setColorEditor({
+          workspaceId,
+          groupId,
+          r: String(rgb.r),
+          g: String(rgb.g),
+          b: String(rgb.b),
+          error: '',
+        });
+      };
+
+      const updateColorEditorChannel = (channel, value) => {
+        setColorEditor((previous) => (
+          previous ? { ...previous, [channel]: value, error: '' } : previous
+        ));
+      };
+
+      const applyColorEditor = () => {
+        if (!colorEditor) return;
+        const channels = [colorEditor.r, colorEditor.g, colorEditor.b];
+        const values = channels.map((value) => {
+          if (typeof value !== 'string' || !/^\d{1,3}$/.test(value.trim())) return null;
+          const number = Number(value.trim());
+          return Number.isInteger(number) && number >= 0 && number <= 255 ? number : null;
+        });
+        if (values.some((value) => value === null)) {
+          setColorEditor((previous) => (previous ? { ...previous, error: tr('group.rgbInvalid') } : previous));
+          return;
+        }
+        const color = rgbToHex(values[0], values[1], values[2]);
+        setPrefs((previous) => patchGroup(
+          previous,
+          colorEditor.workspaceId,
+          colorEditor.groupId,
+          { color },
+        ));
+        closeMenu();
+      };
+
+      const handleMoveGroupToGroup = (workspaceId, groupId, targetGroupId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId] ?? [];
+          if (!canNestGroup(groups, groupId, targetGroupId)) return previous;
+          const source = groups.find((group) => group.id === groupId);
+          if (!source) return previous;
+          let next = updateGroups(
+            previous,
+            workspaceId,
+            groups.map((group) => (
+              group.id === groupId ? { ...group, parentGroupId: targetGroupId } : group
+            )),
+          );
+          if (!source.parentGroupId) {
+            const order = (next.topOrders?.[workspaceId] ?? []).filter((key) => key !== topKeyOfGroup(groupId));
+            next = setTopOrder(next, workspaceId, order);
+          }
+          return next;
+        });
+        notify(tr('group.moved'));
+      };
+
+      const handleMoveGroupOut = (workspaceId, groupId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId] ?? [];
+          const source = groups.find((group) => group.id === groupId);
+          if (!source || !source.parentGroupId) return previous;
+          let next = updateGroups(
+            previous,
+            workspaceId,
+            groups.map((group) => (
+              group.id === groupId ? { ...group, parentGroupId: undefined } : group
+            )),
+          );
+          const order = [...(next.topOrders?.[workspaceId] ?? [])];
+          if (!order.includes(topKeyOfGroup(groupId))) order.push(topKeyOfGroup(groupId));
+          next = setTopOrder(next, workspaceId, order);
+          return next;
+        });
+        notify(tr('group.moved'));
+      };
+
+      const handleCreateSubgroup = (workspaceId, parentGroupId) => {
+        closeMenu();
+        setPrefs((previous) => {
+          const groups = previous.groups?.[workspaceId] ?? [];
+          const parent = groups.find((group) => group.id === parentGroupId);
+          if (!parent || groupDepth(groups, parentGroupId) >= 3) return previous;
+          const group = {
+            id: newGroupId(),
+            name: tr('group.defaultName', { n: groups.length + 1 }),
+            color: GROUP_COLORS[groups.length % GROUP_COLORS.length],
+            collapsed: false,
+            parentGroupId,
+            sessionIds: [],
+          };
+          return updateGroups(previous, workspaceId, [...groups, group]);
+        });
+        notify(tr('group.subgroupCreated'));
       };
 
       const handleAddWorkspace = () => {
@@ -3524,26 +4397,37 @@ window.__ModuleLoader__.load({
         });
       };
 
-      const renderGroup = (workspace, group, members) => {
+      const renderGroup = (workspace, node) => {
+        const { group, members, children, allMembers, totalMembers } = node;
         const orderedMembers = pinnedFirst(members, pinnedSessionIds);
         const overflow = overflowFor('group:' + workspace.workspaceId + ':' + group.id, orderedMembers);
+        const childByKey = new Map(children.map((child) => [topKeyOfGroup(child.group.id), child]));
+        const directKeys = resolveGroupOrder(
+          prefs,
+          group.id,
+          members,
+          children.map((child) => child.group.id),
+        );
+        const visibleSessionKeys = new Set(overflow.rows.map((sessionId) => topKeyOfSession(sessionId)));
+        const lastVisibleSessionKey = [...directKeys].reverse().find((key) => visibleSessionKeys.has(key));
         const editing = editingGroup?.workspaceId === workspace.workspaceId
           && editingGroup?.groupId === group.id;
-        const dropActive = dropHint?.kind === 'group' && dropHint.id === group.id;
         const dropTopPosition = dropHint?.kind === 'topGroup'
           && dropHint.key === topKeyOfGroup(group.id)
           ? dropHint.position
-          : null;
+          : dropHint?.kind === 'groupEdge' && dropHint.id === group.id
+            ? dropHint.position
+            : null;
         const dragging = dragInfo?.kind === 'group' && dragInfo.groupId === group.id;
         const collapsed = group.collapsed && !query;
         const selected = collapsed
           && activePanelId === null
           && currentSessionId !== null
-          && members.includes(currentSessionId);
+          && allMembers.includes(currentSessionId);
         const collapsedStatuses = [];
         if (collapsed) {
           const buckets = new Map();
-          for (const sessionId of orderedMembers) {
+          for (const sessionId of allMembers) {
             const info = statusInfoFor(sessionId);
             if (!info.showStatus) continue;
             const state = info.primaryStatus.state;
@@ -3565,11 +4449,11 @@ window.__ModuleLoader__.load({
           { key: group.id, className: 'dsg-group' },
           h(GroupHeader, {
             group,
-            count: members.length,
+            count: totalMembers,
             collapsed,
             selected,
+            draggable: true,
             statuses: collapsedStatuses,
-            dropActive,
             dropTopPosition,
             dragging,
             editing,
@@ -3592,13 +4476,27 @@ window.__ModuleLoader__.load({
             : h(
                 'div',
                 {
-                  className: 'dsg-groupBody' + (dropActive ? ' dsg-groupDrop' : ''),
+                  className: 'dsg-groupBody',
                   style: groupColorVars(group.color),
                   onDragOver: (event) => handleGroupDragOver(event, workspace.workspaceId, group.id),
                   onDrop: (event) => handleGroupDrop(event, workspace.workspaceId, group.id),
                 },
-                overflow.rows.map((sessionId) => renderSessionRow(sessionId, workspace.workspaceId, group.id)),
-                overflow.button,
+                (() => {
+                  const body = [];
+                  for (const key of directKeys) {
+                    if (key.startsWith('s:')) {
+                      const sessionId = key.slice(2);
+                      if (!visibleSessionKeys.has(key)) continue;
+                      body.push(renderSessionRow(sessionId, workspace.workspaceId, group.id));
+                      if (key === lastVisibleSessionKey && overflow.button) body.push(overflow.button);
+                    } else if (key.startsWith('g:')) {
+                      const child = childByKey.get(key);
+                      if (child) body.push(renderGroup(workspace, child));
+                    }
+                  }
+                  if (overflow.button && overflow.rows.length === 0) body.push(overflow.button);
+                  return body;
+                })(),
               ),
         );
       };
@@ -3652,6 +4550,9 @@ window.__ModuleLoader__.load({
         ));
         const hasGroups = groups.length > 0;
         const zoneActive = dropHint?.kind === 'ungrouped' && dropHint.workspaceId === workspace.workspaceId;
+        const topEndActive = dragInfo?.kind === 'group'
+          && dropHint?.kind === 'topEnd'
+          && dropHint.workspaceId === workspace.workspaceId;
         const showUngroupBar = Boolean(dragInfo?.groupId)
           && dragInfo.workspaceId === workspace.workspaceId
           && hasGroups;
@@ -3665,7 +4566,7 @@ window.__ModuleLoader__.load({
           && currentSessionId !== null
           && collectWorkspaceSessionIds(workspace).includes(currentSessionId);
         const collapsedWorkspaceStatuses = [];
-        if (workspaceTreeMode && depth > 0 && collapsed) {
+        if (collapsed) {
           const buckets = new Map();
           for (const sessionId of collectWorkspaceSessionIds(workspace)) {
             if (!isVisible(sessionId)) continue;
@@ -3797,14 +4698,16 @@ window.__ModuleLoader__.load({
                 childSections.map((child) => renderWorkspace(child, depth + 1)),
                 topItems.map((item) => (
                   item.kind === 'group'
-                    ? renderGroup(workspace, item.group, item.members)
+                    ? renderGroup(workspace, item.node)
                     : renderSessionRow(item.id, workspace.workspaceId, null)
                 )),
                 ungroupedOverflow.button,
                 h(
                   'div',
                   {
-                    className: 'dsg-ungroupedZone' + (zoneActive ? ' dsg-zoneDrop' : ''),
+                    className: 'dsg-ungroupedZone'
+                      + (zoneActive ? ' dsg-zoneDrop' : '')
+                      + (topEndActive ? ' dsg-zoneDropEnd' : ''),
                     onDragOver: (event) => handleUngroupedDragOver(event, workspace.workspaceId),
                     onDrop: (event) => handleUngroupedDrop(event, workspace.workspaceId),
                   },
@@ -3824,7 +4727,7 @@ window.__ModuleLoader__.load({
           }
           for (const item of section.topItems) {
             if (item.kind === 'group') {
-              children.push(renderGroup(section.workspace, item.group, item.members));
+              children.push(renderGroup(section.workspace, item.node));
             } else {
               children.push(renderSessionRow(item.id, section.workspace.workspaceId, null));
             }
@@ -3929,11 +4832,29 @@ window.__ModuleLoader__.load({
           const groups = prefs.groups?.[menu.workspaceId] ?? [];
           const group = groups.find((item) => item.id === menu.groupId);
           if (!group) return null;
+          const targetGroups = groups.filter((target) => (
+            target.id !== group.id
+            && target.id !== group.parentGroupId
+            && canNestGroup(groups, group.id, target.id)
+          ));
+          const customColor = !GROUP_COLORS.includes(group.color);
+          const colorEditorForGroup = colorEditor
+            && colorEditor.workspaceId === menu.workspaceId
+            && colorEditor.groupId === group.id
+            ? colorEditor
+            : null;
+          const rgbPreview = colorEditorForGroup
+            ? rgbToHex(
+                Number(colorEditorForGroup.r) || 0,
+                Number(colorEditorForGroup.g) || 0,
+                Number(colorEditorForGroup.b) || 0,
+              )
+            : group.color;
           return h(
             InlineMenu,
             { rect: menu.rect, onClose: closeMenu },
             h(MenuItem, {
-              icon: h(IconGroup),
+              icon: h(IconEdit),
               label: tr('group.rename'),
               onClick: () => beginGroupRename(menu.workspaceId, menu.groupId),
             }),
@@ -3941,6 +4862,22 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { className: 'dsg-swatches' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-rgbTrigger' + (customColor ? ' selected' : ''),
+                  title: tr('group.rgbTitle'),
+                  'aria-label': tr('group.rgbTitle'),
+                  'aria-expanded': Boolean(colorEditorForGroup),
+                  style: customColor ? { borderColor: group.color } : undefined,
+                  onClick: () => {
+                    if (colorEditorForGroup) setColorEditor(null);
+                    else openColorEditor(menu.workspaceId, menu.groupId, group.color);
+                  },
+                },
+                tr('group.rgb'),
+              ),
               GROUP_COLORS.map((color) => h('button', {
                 key: color,
                 type: 'button',
@@ -3957,6 +4894,95 @@ window.__ModuleLoader__.load({
                 },
               })),
             ),
+            colorEditorForGroup
+              ? h(
+                  'div',
+                  { className: 'dsg-rgbEditor' },
+                  h('span', {
+                    className: 'dsg-rgbPreview',
+                    style: { background: rgbPreview },
+                    title: rgbPreview,
+                  }),
+                  h(
+                    'div',
+                    { className: 'dsg-rgbFields' },
+                    ['r', 'g', 'b'].map((channel) => h(
+                      'label',
+                      { key: channel, className: 'dsg-rgbField' },
+                      h('span', { className: 'dsg-rgbLabel' }, channel.toUpperCase()),
+                      h('input', {
+                        className: 'dsg-rgbInput',
+                        type: 'text',
+                        inputMode: 'numeric',
+                        maxLength: 3,
+                        autoFocus: channel === 'r',
+                        value: colorEditorForGroup[channel],
+                        onChange: (event) => updateColorEditorChannel(channel, event.target.value),
+                        onKeyDown: (event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            applyColorEditor();
+                          } else if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setColorEditor(null);
+                          }
+                        },
+                      }),
+                    )),
+                  ),
+                  h(
+                    'div',
+                    { className: 'dsg-rgbActions' },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dsg-rgbAction',
+                        onClick: () => setColorEditor(null),
+                      },
+                      tr('group.rgbCancel'),
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        className: 'dsg-rgbAction primary',
+                        onClick: applyColorEditor,
+                      },
+                      tr('group.rgbApply'),
+                    ),
+                  ),
+                  colorEditorForGroup.error
+                    ? h('div', { className: 'dsg-rgbError' }, colorEditorForGroup.error)
+                    : null,
+                )
+              : null,
+            h('div', { className: 'dsg-menuSeparator' }),
+            group.parentGroupId
+              ? h(MenuItem, {
+                  icon: h(IconUngroup),
+                  label: tr('group.moveOut'),
+                  onClick: () => handleMoveGroupOut(menu.workspaceId, menu.groupId),
+                })
+              : null,
+            targetGroups.length > 0
+              ? h('div', { className: 'dsg-menuLabelText' }, tr('group.moveLabel'))
+              : null,
+            targetGroups.length > 0
+              ? h(
+                  'div',
+                  { className: 'dsg-menuScroll' },
+                  targetGroups.map((target) => h(MenuItem, {
+                    key: target.id,
+                    icon: h('span', {
+                      className: 'dsg-groupDot',
+                      style: groupColorVars(target.color),
+                    }),
+                    label: tr('group.moveToGroup', { name: target.name }),
+                    onClick: () => handleMoveGroupToGroup(menu.workspaceId, menu.groupId, target.id),
+                  })),
+                )
+              : null,
             h('div', { className: 'dsg-menuSeparator' }),
             h(MenuItem, {
               icon: h(IconUngroup),
@@ -4188,7 +5214,7 @@ window.__ModuleLoader__.load({
         h('style', { key: 'styles' }, CSS),
         h(
           'div',
-          { className: 'dsg-root' },
+          { className: 'dsg-root', ref: rootRef },
           renderHeader(),
           h(
             'div',
@@ -4221,6 +5247,21 @@ window.__ModuleLoader__.load({
         renderMenu(),
         renderViewMenu(),
         renderAddWorkspaceDialog(),
+        notice
+          ? h('div', {
+              key: 'notice',
+              className: 'dsg-toast',
+              role: 'status',
+              'aria-live': 'polite',
+              style: toastPosition
+                ? {
+                    left: toastPosition.left,
+                    bottom: toastPosition.bottom,
+                    maxWidth: toastPosition.maxWidth,
+                  }
+                : undefined,
+            }, notice)
+          : null,
       );
     }
 
