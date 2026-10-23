@@ -271,7 +271,6 @@ reconcile 时机：
 | `index.js` | 插件入口声明 |
 | `locale/*.json` | 插件元数据本地化 |
 | `docs/` | 预览图、主题图、架构文档 |
-| `tests/smoke.cjs` | Node 冒烟测试 |
 | `README.md` | 使用说明与功能预览 |
 
 ---
