@@ -9,7 +9,7 @@
   <br>
   <strong>彩色分组、折叠、拖动排序、状态汇总</strong>，让一长串会话重新变得可管理。
   <br><br>
-  <code>v0.2.1</code> · DSH Web Plugin · MIT
+  <code>v0.2.1</code> · DSH Plugin · MIT
 </p>
 
 <p align="center">
@@ -275,9 +275,6 @@ A：不会。目前是当前 origin / profile 的本地视图状态。
 
 **Q：可以不用分组视图吗？**  
 A：可以。顶部「视图选项」切回「原版视图」即可，原来的 DSH 侧栏会恢复。
-
-**Q：支持 DSH Desktop 吗？**  
-A：目前只做了 DSH Web 客户端。
 
 ## 版本历史
 
