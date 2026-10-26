@@ -98,6 +98,9 @@ window.__ModuleLoader__.load({
       '#8a8f98': '#b9c0ca',
     };
 
+    const BRIDGE_GLOBAL = '__DSH_SESSION_GROUPS_BRIDGE__';
+    const BRIDGE_EVENT = 'dsh-session-groups:prefs';
+    let bridgeSnapshotProvider = null;
     function groupColorVars(color) {
       return {
         '--dsg-group-color-light': color,
@@ -191,6 +194,7 @@ window.__ModuleLoader__.load({
       'status.compact.approval': '待审批',
       'status.compact.planReview': '计划待审',
       'status.compact.answer': '待回答',
+      'status.compact.subagents': '子代理运行中',
       'status.completed': '已完成',
       'sessions.expand': '展开其余 {n} 个会话',
       'sessions.collapse': '收起',
@@ -244,6 +248,9 @@ window.__ModuleLoader__.load({
       'group.rgbApply': '应用',
       'group.rgbCancel': '取消',
       'group.rgbInvalid': '请输入 0–255 的整数',
+      'subagents.expand': '展开子代理',
+      'subagents.collapse': '收起子代理',
+      'subagents.label': '子代理',
       'group.collapse': '折叠分组',
       'group.expand': '展开分组',
       'group.dissolve': '解散分组',
@@ -336,6 +343,7 @@ window.__ModuleLoader__.load({
       'status.compact.approval': 'Approval',
       'status.compact.planReview': 'Plan review',
       'status.compact.answer': 'Answer',
+      'status.compact.subagents': 'Subagent running',
       'status.completed': 'Completed',
       'sessions.expand': 'Show {n} more sessions',
       'sessions.collapse': 'Show less',
@@ -389,6 +397,9 @@ window.__ModuleLoader__.load({
       'group.rgbApply': 'Apply',
       'group.rgbCancel': 'Cancel',
       'group.rgbInvalid': 'Enter integers from 0 to 255',
+      'subagents.expand': 'Show subagents',
+      'subagents.collapse': 'Hide subagents',
+      'subagents.label': 'Subagents',
       'group.collapse': 'Collapse group',
       'group.expand': 'Expand group',
       'group.dissolve': 'Dissolve group',
@@ -618,6 +629,7 @@ window.__ModuleLoader__.load({
     }
 
     const MODE_KEY = 'dsh.session-groups.view';
+    const UNGROUPED_KEY = '__ungrouped__';
 
     function createViewModeStore() {
       let mode = false;
@@ -819,6 +831,363 @@ window.__ModuleLoader__.load({
         current = byId.get(current)?.parentGroupId;
       }
       return depth;
+    }
+
+    /* ── Host agent bridge ──────────────────────────────────────────── */
+
+    function bridgeSnapshot() {
+      if (typeof bridgeSnapshotProvider !== 'function') return null;
+      try {
+        const snapshot = bridgeSnapshotProvider();
+        if (!snapshot || snapshot.view !== 'grouped' || !Array.isArray(snapshot.workspaces)) {
+          return null;
+        }
+        return snapshot;
+      } catch {
+        return null;
+      }
+    }
+
+    function bridgeGroupColor(previous, group, index) {
+      if (group.color && /^#[0-9a-f]{6}$/i.test(group.color)) return group.color.toLowerCase();
+      if (previous && typeof previous.color === 'string' && /^#[0-9a-f]{6}$/i.test(previous.color)) {
+        return previous.color.toLowerCase();
+      }
+      return GROUP_COLORS[index % GROUP_COLORS.length];
+    }
+
+    /**
+     * Apply one complete workspace plan from the Host agent tool. The browser
+     * is the authority: it validates membership, unique assignment, and depth
+     * against the live workspace before replacing local group state.
+     */
+    function applyBridgePlan(plan) {
+      if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+        throw new Error('修改计划格式无效');
+      }
+      const workspaceId = typeof plan.workspaceId === 'string' ? plan.workspaceId.trim() : '';
+      if (!workspaceId) throw new Error('修改计划缺少 workspaceId');
+      const snapshot = bridgeSnapshot();
+      if (!snapshot) {
+        throw new Error('当前没有可用的分组视图。请先在侧栏切换到分组视图并保持页面打开。');
+      }
+      const workspace = snapshot.workspaces.find((item) => item && item.id === workspaceId);
+      if (!workspace) throw new Error(`未找到工作区 ${workspaceId}`);
+      const visibleSessions = Array.isArray(workspace.sessions)
+        ? workspace.sessions.filter((item) => item && typeof item.id === 'string')
+        : [];
+      const visibleIds = new Set(visibleSessions.map((item) => item.id));
+      const titleById = new Map(visibleSessions.map((item) => [item.id, item.title || item.id]));
+
+      const rawGroups = Array.isArray(plan.groups) ? plan.groups : null;
+      if (!rawGroups) throw new Error('修改计划缺少 groups 数组');
+      const ids = new Set();
+      const groups = [];
+      for (const raw of rawGroups) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+          throw new Error('分组计划格式无效');
+        }
+        const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+        if (!id) throw new Error('分组计划需要非空 id');
+        if (ids.has(id)) throw new Error(`分组 id 重复：${id}`);
+        ids.add(id);
+        const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+        if (!name) throw new Error(`分组 ${id} 需要非空名称`);
+        if (raw.sessionIds !== undefined && !Array.isArray(raw.sessionIds)) {
+          throw new Error(`分组 ${id} 的 sessionIds 格式无效`);
+        }
+        const sessionIds = raw.sessionIds ?? [];
+        const seen = new Set();
+        for (const sessionId of sessionIds) {
+          if (typeof sessionId !== 'string' || !visibleIds.has(sessionId)) {
+            throw new Error(`会话 ${String(sessionId)} 不属于工作区 ${workspaceId}`);
+          }
+          if (seen.has(sessionId)) throw new Error(`分组 ${id} 重复包含会话 ${sessionId}`);
+          seen.add(sessionId);
+        }
+        const parentGroupId = typeof raw.parentGroupId === 'string' && raw.parentGroupId.trim()
+          ? raw.parentGroupId.trim()
+          : undefined;
+        if (parentGroupId === id) throw new Error(`分组 ${id} 不能以自身为父组`);
+        groups.push({
+          id,
+          name,
+          color: raw.color,
+          collapsed: raw.collapsed === true,
+          parentGroupId,
+          sessionIds: sessionIds.slice(),
+        });
+      }
+
+      const byId = new Map(groups.map((group) => [group.id, group]));
+      for (const group of groups) {
+        if (group.parentGroupId !== undefined && !byId.has(group.parentGroupId)) {
+          throw new Error(`分组 ${group.id} 的父组不在计划中`);
+        }
+      }
+      for (const group of groups) {
+        let depth = 1;
+        let parentId = group.parentGroupId;
+        const seen = new Set([group.id]);
+        while (parentId !== undefined) {
+          if (seen.has(parentId)) throw new Error(`分组 ${group.id} 存在循环嵌套`);
+          seen.add(parentId);
+          depth += 1;
+          if (depth > 3) throw new Error(`分组 ${group.id} 超过 3 层嵌套`);
+          parentId = byId.get(parentId)?.parentGroupId;
+        }
+      }
+
+      const rawUngrouped = plan.ungroupedSessionIds === undefined ? [] : plan.ungroupedSessionIds;
+      if (!Array.isArray(rawUngrouped)) throw new Error('ungroupedSessionIds 格式无效');
+      const ungroupedSessionIds = [];
+      const assigned = new Set();
+      for (const group of groups) {
+        for (const sessionId of group.sessionIds) {
+          if (assigned.has(sessionId)) throw new Error(`会话 ${sessionId} 出现在多个位置`);
+          assigned.add(sessionId);
+        }
+      }
+      for (const sessionId of rawUngrouped) {
+        if (typeof sessionId !== 'string' || !visibleIds.has(sessionId)) {
+          throw new Error(`会话 ${String(sessionId)} 不属于工作区 ${workspaceId}`);
+        }
+        if (assigned.has(sessionId)) throw new Error(`会话 ${sessionId} 同时出现在分组和未分组中`);
+        assigned.add(sessionId);
+        ungroupedSessionIds.push(sessionId);
+      }
+      const missing = visibleSessions.filter((session) => !assigned.has(session.id));
+      if (missing.length > 0) {
+        const labels = missing.slice(0, 5).map((session) => titleById.get(session.id) || session.id).join('、');
+        throw new Error(`计划没有覆盖 ${missing.length} 个会话：${labels}${missing.length > 5 ? '…' : ''}`);
+      }
+
+      const prefs = loadPrefs();
+      const allStoredGroups = prefs.groups ?? {};
+      for (const [otherWorkspaceId, otherGroups] of Object.entries(allStoredGroups)) {
+        if (otherWorkspaceId === workspaceId || !Array.isArray(otherGroups)) continue;
+        for (const otherGroup of otherGroups) {
+          if (otherGroup && ids.has(otherGroup.id)) {
+            throw new Error(`分组 id ${otherGroup.id} 已被其他工作区使用，请换一个新 id`);
+          }
+        }
+      }
+      const oldGroups = prefs.groups[workspaceId] ?? [];
+      const previousById = new Map(oldGroups.map((group) => [group.id, group]));
+      const groupOrders = { ...(prefs.groupOrders ?? {}) };
+      for (const group of oldGroups) delete groupOrders[group.id];
+      const nextGroups = groups.map((group, index) => ({
+        id: group.id,
+        name: group.name,
+        color: bridgeGroupColor(previousById.get(group.id), group, index),
+        collapsed: group.collapsed === true,
+        parentGroupId: group.parentGroupId,
+        sessionIds: group.sessionIds.slice(),
+      }));
+      for (const group of nextGroups) {
+        const children = nextGroups
+          .filter((candidate) => candidate.parentGroupId === group.id)
+          .map((candidate) => topKeyOfGroup(candidate.id));
+        const order = [
+          ...group.sessionIds.map((sessionId) => topKeyOfSession(sessionId)),
+          ...children,
+        ];
+        if (order.length > 0) groupOrders[group.id] = order;
+        else delete groupOrders[group.id];
+      }
+
+      const topGroups = nextGroups
+        .filter((group) => !group.parentGroupId)
+        .map((group) => topKeyOfGroup(group.id));
+      const topOrders = { ...(prefs.topOrders ?? {}) };
+      const topOrder = [
+        ...topGroups,
+        ...ungroupedSessionIds.map((sessionId) => topKeyOfSession(sessionId)),
+      ];
+      if (topOrder.length > 0) topOrders[workspaceId] = topOrder;
+      else delete topOrders[workspaceId];
+      const manualOrders = { ...(prefs.manualOrders ?? {}) };
+      const childOrders = { ...(prefs.childOrders ?? {}) };
+      delete manualOrders[workspaceId];
+      delete childOrders[workspaceId];
+      const allGroups = { ...(prefs.groups ?? {}) };
+      if (nextGroups.length > 0) allGroups[workspaceId] = nextGroups;
+      else delete allGroups[workspaceId];
+      savePrefs({
+        ...prefs,
+        groups: allGroups,
+        groupOrders,
+        topOrders,
+        manualOrders,
+        childOrders,
+      });
+      try {
+        window.dispatchEvent(new Event(BRIDGE_EVENT));
+      } catch {
+        /* the local view refreshes on next mount if the event is unavailable */
+      }
+      return {
+        workspaceId,
+        workspaceTitle: workspace.title || workspace.path || workspaceId,
+        groups: nextGroups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          color: group.color,
+          collapsed: group.collapsed,
+          parentGroupId: group.parentGroupId ?? null,
+          sessionIds: group.sessionIds.slice(),
+        })),
+        ungroupedSessionIds,
+        sessionCount: visibleSessions.length,
+      };
+    }
+
+    function bridgeConfig() {
+      try {
+        const config = window[BRIDGE_GLOBAL];
+        if (!config || typeof config !== 'object') return null;
+        if (typeof config.path !== 'string' || typeof config.token !== 'string') return null;
+        return config;
+      } catch {
+        return null;
+      }
+    }
+
+    async function bridgeResolveConfig() {
+      const existing = bridgeConfig();
+      if (existing) return existing;
+      try {
+        if (typeof fetch !== 'function') return null;
+        const response = await fetch('/dsh-session-groups-bridge/config', {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!response.ok) return null;
+        const config = await response.json();
+        if (!config || typeof config.path !== 'string' || typeof config.token !== 'string') return null;
+        try {
+          window[BRIDGE_GLOBAL] = config;
+        } catch {
+          /* the global is only an optimization */
+        }
+        return config;
+      } catch {
+        return null;
+      }
+    }
+
+    async function bridgePost(config, endpoint, value) {
+      if (typeof fetch !== 'function') return;
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = controller ? window.setTimeout(() => controller.abort(), 8000) : null;
+      try {
+        await fetch(config.path + endpoint, {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: {
+            'content-type': 'application/json',
+            'x-dsh-session-groups-token': config.token,
+          },
+          body: JSON.stringify(value),
+          signal: controller ? controller.signal : undefined,
+        });
+      } catch {
+        /* the Host side will time out if the page cannot answer */
+      } finally {
+        if (timer !== null) window.clearTimeout(timer);
+      }
+    }
+
+    async function bridgeHandleRequest(config, request) {
+      if (!request || typeof request.id !== 'string') return;
+      try {
+        let data;
+        if (request.kind === 'snapshot') {
+          const snapshot = bridgeSnapshot();
+          if (!snapshot) {
+            throw new Error('当前没有可用的分组视图。请先切换到分组视图并保持页面打开。');
+          }
+          data = snapshot;
+        } else if (request.kind === 'apply') {
+          data = applyBridgePlan(request.payload);
+        } else {
+          throw new Error('未知的 Host 请求');
+        }
+        await bridgePost(config, '/respond', { requestId: request.id, ok: true, data });
+      } catch (error) {
+        await bridgePost(config, '/respond', {
+          requestId: request.id,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    function startSessionGroupsBridge() {
+      let stopped = false;
+      let busy = false;
+      let timer = null;
+      const run = async () => {
+        if (stopped) return;
+        const config = await bridgeResolveConfig();
+        if (!config) {
+          timer = window.setTimeout(run, 900);
+          return;
+        }
+        // Only a mounted grouped view can answer snapshot/apply requests.
+        // Avoid claiming them from the official view or a rail-only page.
+        if (!bridgeSnapshot()) {
+          timer = window.setTimeout(run, 700);
+          return;
+        }
+        if (busy) {
+          timer = window.setTimeout(run, 300);
+          return;
+        }
+        busy = true;
+        try {
+          if (typeof fetch === 'function') {
+            const controller = typeof AbortController === 'function' ? new AbortController() : null;
+            const abortTimer = controller ? window.setTimeout(() => controller.abort(), 5000) : null;
+            try {
+              const response = await fetch(config.path + '/poll', {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'x-dsh-session-groups-token': config.token },
+                signal: controller ? controller.signal : undefined,
+              });
+              if (response.status === 403) {
+                try {
+                  delete window[BRIDGE_GLOBAL];
+                } catch {
+                  /* stale token is harmless; the next tick retries the public config */
+                }
+              } else if (response.ok) {
+                const body = await response.json();
+                const requests = Array.isArray(body?.requests) ? body.requests : [];
+                for (const request of requests) {
+                  await bridgeHandleRequest(config, request);
+                }
+              }
+            } catch {
+              /* Host may be restarting; retry on the next tick */
+            } finally {
+              if (abortTimer !== null) window.clearTimeout(abortTimer);
+            }
+          }
+        } finally {
+          busy = false;
+          if (!stopped) timer = window.setTimeout(run, 700);
+        }
+      };
+      run();
+      return () => {
+        stopped = true;
+        if (timer !== null) window.clearTimeout(timer);
+      };
     }
 
     function groupHeight(groups, groupId) {
@@ -1283,6 +1652,18 @@ window.__ModuleLoader__.load({
       props,
     );
 
+    // 官方子代理图标（16×16，strokeWidth 1），路径取自 DSH primitives。
+    const IconSubagentGroup = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M6 8.25C7.51878 8.25 8.75 7.01878 8.75 5.5C8.75 3.98122 7.51878 2.75 6 2.75C4.48122 2.75 3.25 3.98122 3.25 5.5C3.25 7.01878 4.48122 8.25 6 8.25Z', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M1 14.5C1 11.5 3.5 10.25 6 10.25C8.5 10.25 11 11.5 11 14.5', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M10.5 2.9C11.65 3.35 12.45 4.35 12.45 5.5C12.45 6.65 11.65 7.65 10.5 8.1', stroke: 'currentColor' }),
+      h('path', { key: 'd', d: 'M12.4 10.6C13.9 11.3 15 12.6 15 14.5', stroke: 'currentColor' }),
+    ], props);
+    const IconSubagent = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M8 8.25C9.51878 8.25 10.75 7.01878 10.75 5.5C10.75 3.98122 9.51878 2.75 8 2.75C6.48122 2.75 5.25 3.98122 5.25 5.5C5.25 7.01878 6.48122 8.25 8 8.25Z', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M2.5 14.5C2.5 11.5 5.25 10.25 8 10.25C10.75 10.25 13.5 11.5 13.5 14.5', stroke: 'currentColor' }),
+    ], props);
+
     /* ── styles ────────────────────────────────────────────────────── */
 
     const CSS = `
@@ -1353,7 +1734,6 @@ window.__ModuleLoader__.load({
       .dsg-sessionOverflow{width:100%;box-sizing:border-box;height:28px;flex:none;padding:0 12px 0 26px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:12px;line-height:20px;text-align:left;cursor:pointer}
       .dsg-sessionOverflow:hover{color:var(--dsw-alias-label-secondary)}
       .dsg-wsBody>.dsg-sessionOverflow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
-      .dsg-simpleList>.dsg-sessionOverflow{margin:0 2px 0 24px;padding-left:10px}
       .dsg-statusSlot{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:flex-start}
       .dsg-stateDot{position:relative;display:inline-block;flex:none}
       .dsg-stateDot:after{content:"";position:absolute;inset:20%;border-radius:50%;background:currentColor}
@@ -1378,6 +1758,21 @@ window.__ModuleLoader__.load({
       .dsg-sessionRow.dsg-dropBefore::before{top:-7px}
       .dsg-sessionRow.dsg-dropAfter::after{bottom:-7px}
       .dsg-sessionRow.dsg-dropGroup{outline:2px dashed var(--dsw-alias-state-business-primary);outline-offset:-2px;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)}
+      .dsg-subagentToggle{width:16px;height:16px;flex:none;display:none;align-items:center;justify-content:center;padding:0;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer}
+      .dsg-sessionRow.hasSubagents:hover .dsg-subagentToggle,.dsg-sessionRow.hasSubagents:focus-within .dsg-subagentToggle,.dsg-sessionRow.subagents-open .dsg-subagentToggle{display:inline-flex}
+      .dsg-subagentToggle:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-subagentToggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+      .dsg-subagentList{display:flex;flex-direction:column;gap:1px;margin:0 2px 1px 34px;padding-left:4px;border-left:1px solid var(--dsw-alias-border-l1)}
+      .dsg-wsBody>.dsg-subagentList{margin-left:calc(38px + var(--dsg-ws-indent,0px))}
+      .dsg-groupBody>.dsg-subagentList{margin-left:26px}
+      .dsg-flatList>.dsg-subagentList{margin-left:38px}
+      .dsg-subagentRow{display:flex;align-items:center;gap:7px;height:26px;box-sizing:border-box;min-width:0;padding:0 6px 0 5px;border-radius:6px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;cursor:pointer}
+      .dsg-subagentRow:hover,.dsg-subagentRow:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary);outline:none}
+      .dsg-subagentRow.disabled{opacity:.6;cursor:default}
+      .dsg-subagentRowIcon{flex:none;color:var(--dsw-alias-label-tertiary)}
+      .dsg-subagentStatusSlot{width:14px;height:14px;flex:none;display:inline-flex;align-items:center;justify-content:center}
+      .dsg-subagentRow.active{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-subagentTitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .dsg-sessionRow.archived .dsg-titleText{color:var(--dsw-alias-label-caption)}
       .dsg-titleText{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;line-height:20px;letter-spacing:.005em}
       .dsg-time{flex:none;margin-left:2px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;white-space:nowrap}
@@ -1386,15 +1781,12 @@ window.__ModuleLoader__.load({
       .dsg-rowMore:hover{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
       .dsg-ungroupedZone{display:flex;flex-direction:column;gap:1px;min-height:4px;border-radius:7px;margin-top:1px;padding:0}
       .dsg-ungroupedZone>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
-      .dsg-simpleList>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
       .dsg-ungroupedZone.dsg-zoneHint{min-height:30px;border:1px dashed var(--dsw-alias-border-l2);align-items:center;justify-content:center}
       .dsg-ungroupedZone.dsg-zoneDrop{border-color:transparent;background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent)}
       .dsg-ungroupedZone.dsg-zoneDropEnd{box-shadow:inset 0 2px 0 var(--dsw-alias-state-business-primary)}
       .dsg-zoneText{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;padding:6px 0}
-      .dsg-ungroupedHeader{display:flex;align-items:center;gap:7px;height:30px;padding:0 8px 0 10px;flex:none;color:var(--dsw-alias-label-secondary);font-size:11.5px;font-weight:500}
       .dsg-flatList{display:flex;flex-direction:column;gap:2px;padding:1px 0 8px}
       .dsg-flatList>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
-      .dsg-simpleList{display:flex;flex-direction:column;gap:1px;padding-left:0}
       .dsg-empty{padding:26px 16px;text-align:center;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;display:flex;flex-direction:column;align-items:center;gap:10px}
       .dsg-emptyAction{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
       .dsg-emptyAction:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1624,13 +2016,20 @@ window.__ModuleLoader__.load({
       return undefined;
     }
 
+    function subagentRunningFor(list, childId, statuses) {
+      const status = statusValue(statuses, childId);
+      if (status?.running === true) return true;
+      if (list.byId?.[childId]?.running === true) return true;
+      const timing = list.projectionsBySession?.[childId]?.values?.subagentTiming;
+      return timing?.active !== undefined;
+    }
+
     function runningChildCountFor(list, parentId, statuses) {
       const catalog = list.projectionsBySession?.[parentId]?.values?.subagentCatalog;
       if (!Array.isArray(catalog)) return 0;
       let count = 0;
       for (const child of catalog) {
-        const status = statusValue(statuses, child.id);
-        if ((status?.running ?? list.byId?.[child.id]?.running) === true) count += 1;
+        if (subagentRunningFor(list, child.id, statuses)) count += 1;
       }
       return count;
     }
@@ -1643,6 +2042,7 @@ window.__ModuleLoader__.load({
               node.runningSubagentCount === 1 ? 'status.subagentsRunning.one' : 'status.subagentsRunning.other',
               { n: node.runningSubagentCount },
             ),
+            trailingLabel: tr('status.compact.subagents'),
           }
         : undefined;
       let pending;
@@ -1717,6 +2117,9 @@ window.__ModuleLoader__.load({
         dropPos,
         dropGroup,
         canDrag,
+        subagentCount,
+        subagentsExpanded,
+        onToggleSubagents,
         editing,
         editingValue,
         t,
@@ -1746,6 +2149,8 @@ window.__ModuleLoader__.load({
       if (dropGroup) classes.push('dsg-dropGroup');
       if (showStatus) classes.push('hasStatus');
       if (archived) classes.push('archived');
+      if (subagentCount > 0) classes.push('hasSubagents');
+      if (subagentCount > 0 && subagentsExpanded) classes.push('subagents-open');
       return h(
         'div',
         {
@@ -1774,10 +2179,38 @@ window.__ModuleLoader__.load({
           onDragOver: canDrag ? (event) => onDragOver(event, sessionId) : undefined,
           onDrop: canDrag ? (event) => onDrop(event, sessionId) : undefined,
         },
+        subagentCount > 0
+          ? h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-subagentToggle',
+                title: subagentsExpanded
+                  ? (typeof t === 'function' ? t('subagents.collapse') : translate('subagents.collapse'))
+                  : (typeof t === 'function' ? t('subagents.expand') : translate('subagents.expand')),
+                'aria-label': subagentsExpanded
+                  ? (typeof t === 'function' ? t('subagents.collapse') : translate('subagents.collapse'))
+                  : (typeof t === 'function' ? t('subagents.expand') : translate('subagents.expand')),
+                'aria-expanded': subagentsExpanded === true,
+                onPointerDown: (event) => event.stopPropagation(),
+                onClick: (event) => {
+                  event.stopPropagation();
+                  if (onToggleSubagents) onToggleSubagents(sessionId);
+                },
+              },
+              subagentsExpanded
+                ? h(IconSubagent, { width: 14, height: 14 })
+                : h(IconSubagentGroup, { width: 14, height: 14 }),
+            )
+          : null,
         showStatus
           ? h(
               'span',
-              { className: 'dsg-statusSlot' },
+              {
+                className: 'dsg-statusSlot',
+                title: statuses.map((status) => status.label).join('，'),
+                'aria-label': statuses.map((status) => status.label).join('，'),
+              },
               h(StateDot, { state: statuses[0].state }),
               statuses.map((status, index) => h(
                 'span',
@@ -2560,6 +2993,7 @@ window.__ModuleLoader__.load({
       const [addingWorkspace, setAddingWorkspace] = React.useState(false);
       const [addWorkspaceDialog, setAddWorkspaceDialog] = React.useState(null);
       const [overflowExpanded, setOverflowExpanded] = React.useState({});
+      const [expandedSubagentSessions, setExpandedSubagentSessions] = React.useState(() => new Set());
       const [dragInfo, setDragInfo] = React.useState(null);
       const [dropHint, setDropHint] = React.useState(null);
       const dragRef = React.useRef(null);
@@ -2624,9 +3058,16 @@ window.__ModuleLoader__.load({
         savePrefs(prefs);
       }, [prefs]);
 
+      React.useEffect(() => {
+        const onPrefsChanged = () => setPrefs(loadPrefs());
+        window.addEventListener(BRIDGE_EVENT, onPrefsChanged);
+        return () => window.removeEventListener(BRIDGE_EVENT, onPrefsChanged);
+      }, []);
+
       React.useEffect(() => () => {
         if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
       }, []);
+
 
       const workspaces = Array.isArray(workspaceState?.items) ? workspaceState.items : [];
       const phase = workspaceState?.phase ?? 'pending';
@@ -2700,6 +3141,11 @@ window.__ModuleLoader__.load({
           for (const workspace of workspaces) {
             memberSets.set(workspace.workspaceId, new Set(workspace.sessionIds ?? []));
           }
+          const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds ?? []));
+          const strayIds = (list.ids ?? []).filter((id) => (
+            !accounted.has(id) && list.byId?.[id]?.origin !== 'subagent'
+          ));
+          if (strayIds.length > 0) memberSets.set(UNGROUPED_KEY, new Set(strayIds));
           const nextGroups = {};
           for (const [workspaceId, groups] of Object.entries(previous.groups ?? {})) {
             const members = memberSets.get(workspaceId);
@@ -2807,7 +3253,7 @@ window.__ModuleLoader__.load({
             flatList: previous.flatList === true,
           };
         });
-      }, [workspaces, phase]);
+      }, [workspaces, phase, list]);
 
       React.useEffect(() => {
         const pending = pendingGroupSessionRef.current;
@@ -2841,6 +3287,44 @@ window.__ModuleLoader__.load({
         if (!candidate || candidate === sessionId) return tr('untitled');
         return candidate;
       };
+      React.useEffect(() => {
+        const provider = () => {
+          const stored = loadPrefs();
+          const workspaceList = [];
+          for (const workspace of workspaces) {
+            const groups = Array.isArray(stored.groups[workspace.workspaceId])
+              ? stored.groups[workspace.workspaceId].map((group) => ({
+                  id: group.id,
+                  name: group.name,
+                  color: group.color,
+                  collapsed: group.collapsed === true,
+                  parentGroupId: group.parentGroupId ?? null,
+                  sessionIds: Array.isArray(group.sessionIds) ? group.sessionIds.slice() : [],
+                }))
+              : [];
+            const sessions = (Array.isArray(workspace.sessionIds) ? workspace.sessionIds : [])
+              .filter((sessionId) => !archivedSessionIds.has(sessionId))
+              .map((sessionId) => ({ id: sessionId, title: titleOf(sessionId) }));
+            const grouped = new Set(groups.flatMap((group) => group.sessionIds));
+            workspaceList.push({
+              id: workspace.workspaceId,
+              title: workspace.title || workspace.path || workspace.workspaceId,
+              path: workspace.path,
+              sessions,
+              groups,
+              ungroupedSessionIds: sessions
+                .filter((session) => !grouped.has(session.id))
+                .map((session) => session.id),
+            });
+          }
+          return { view: 'grouped', workspaces: workspaceList };
+        };
+        bridgeSnapshotProvider = provider;
+        return () => {
+          if (bridgeSnapshotProvider === provider) bridgeSnapshotProvider = null;
+        };
+      }, [archivedSessionIds, list, workspaces]);
+
       const sortScope = (previous, rootWorkspaceId, mode) => {
         const byId = new Map(workspaces.map((workspace) => [workspace.workspaceId, workspace]));
         const childrenByParent = new Map();
@@ -2997,6 +3481,43 @@ window.__ModuleLoader__.load({
           childOrders: nextChildOrders,
           groupOrders: nextGroupOrders,
         };
+      };
+
+      const subagentCatalogOf = (sessionId) => {
+        const catalog = list.projectionsBySession?.[sessionId]?.values?.subagentCatalog;
+        return Array.isArray(catalog)
+          ? catalog.filter((entry) => entry && typeof entry.id === 'string' && entry.id.length > 0)
+          : [];
+      };
+
+      const subagentLabelOf = (entry) => {
+        const stored = typeof entry?.label === 'string' ? entry.label.trim() : '';
+        if (stored) return stored;
+        const row = list.byId?.[entry?.id];
+        const candidate = row && (row.title || row.displayTitle);
+        if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+        return String(entry?.id ?? '');
+      };
+
+      const toggleSubagentSession = React.useCallback((sessionId) => {
+        setExpandedSubagentSessions((previous) => {
+          const next = new Set(previous);
+          if (next.has(sessionId)) next.delete(sessionId);
+          else next.add(sessionId);
+          return next;
+        });
+      }, []);
+
+      const openSubagentSession = (parentSessionId, entry) => {
+        if (!entry || entry.mode === 'external' || typeof openSession !== 'function') return;
+        const mode = entry.mode === 'one-shot' || entry.mode === 'continuable' || entry.mode === 'unknown'
+          ? entry.mode
+          : 'unknown';
+        openSession({
+          parentSessionId,
+          childSessionId: entry.id,
+          mode,
+        });
       };
 
       const isVisible = (sessionId) => {
@@ -3156,16 +3677,41 @@ window.__ModuleLoader__.load({
       }
 
       const accounted = new Set(workspaces.flatMap((workspace) => workspace.sessionIds ?? []));
-      const ungroupedSessionIds = orderByUpdated(
-        (list.ids ?? []).filter((id) => !accounted.has(id) && isVisible(id) && matches(id)),
-      );
+      const strayIds = (list.ids ?? []).filter((id) => !accounted.has(id) && isVisible(id));
+      const storedUngroupedOrder = prefs.manualOrders?.[UNGROUPED_KEY];
+      let orderedUngrouped;
+      if (Array.isArray(storedUngroupedOrder)) {
+        const visibleSet = new Set(strayIds);
+        const seen = new Set();
+        orderedUngrouped = [];
+        for (const id of storedUngroupedOrder) {
+          if (!visibleSet.has(id) || seen.has(id)) continue;
+          seen.add(id);
+          orderedUngrouped.push(id);
+        }
+        orderedUngrouped.push(...orderByUpdated(strayIds.filter((id) => !seen.has(id))));
+      } else {
+        orderedUngrouped = orderByUpdated(strayIds);
+      }
+      orderedUngrouped = pinnedFirst(orderedUngrouped, pinnedSessionIds);
+      const selectedUngroupedBlankId = currentSessionId && list.byId?.[currentSessionId]?.blank
+        ? currentSessionId
+        : null;
+      if (selectedUngroupedBlankId) {
+        const blankIndex = orderedUngrouped.indexOf(selectedUngroupedBlankId);
+        if (blankIndex > 0) {
+          orderedUngrouped = [selectedUngroupedBlankId, ...orderedUngrouped.filter((id) => id !== selectedUngroupedBlankId)];
+        }
+      }
+      const ungroupedSessionIds = orderedUngrouped.filter((id) => matches(id));
       if (ungroupedSessionIds.length > 0) {
         sections.push({
-          key: '__ungrouped__',
+          key: UNGROUPED_KEY,
           ungroupedOnly: true,
           groups: [],
           ungrouped: ungroupedSessionIds,
-          collapsed: false,
+          ungroupedAll: orderedUngrouped,
+          collapsed: !query && prefs.collapsedWorkspaces?.[UNGROUPED_KEY] === true,
         });
       }
 
@@ -3823,6 +4369,104 @@ window.__ModuleLoader__.load({
         handleUngroupedDrop(event, workspaceId);
       };
 
+      const ungroupedOrderForDrag = () => {
+        const section = sections.find((candidate) => candidate.key === UNGROUPED_KEY);
+        const base = Array.isArray(section?.ungroupedAll) ? section.ungroupedAll : [];
+        const stored = prefs.manualOrders?.[UNGROUPED_KEY];
+        const order = Array.isArray(stored)
+          ? stored.filter((id) => base.includes(id))
+          : [...base];
+        for (const id of base) {
+          if (!order.includes(id)) order.push(id);
+        }
+        return order;
+      };
+
+      const commitUngroupedReorder = (sourceId, targetId, position) => {
+        let order = ungroupedOrderForDrag().filter((id) => id !== sourceId);
+        if (targetId === undefined || targetId === null) {
+          order.push(sourceId);
+        } else {
+          let index = order.indexOf(targetId);
+          if (index === -1) index = order.length;
+          else if (position === 'after') index += 1;
+          order.splice(index, 0, sourceId);
+        }
+        clearDrag();
+        setPrefs((previous) => setManualOrder(previous, UNGROUPED_KEY, order));
+        notify(tr('notice.reordered'));
+      };
+
+      const handleUngroupedSessionDragStart = (event, sessionId) => {
+        if (event.target && typeof event.target.closest === 'function' && event.target.closest('button,input')) {
+          event.preventDefault();
+          return;
+        }
+        if (list.byId?.[sessionId]?.blank === true) {
+          event.preventDefault();
+          return;
+        }
+        const info = {
+          kind: 'session',
+          sessionId,
+          workspaceId: UNGROUPED_KEY,
+          groupId: null,
+          ungrouped: true,
+        };
+        dragRef.current = info;
+        setDragInfo(info);
+        setDropHint(null);
+        try {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', sessionId);
+          event.dataTransfer.setData('application/x-dsh-session-group', JSON.stringify(info));
+        } catch {
+          /* dataTransfer may be unavailable in synthetic drags */
+        }
+      };
+
+      const handleUngroupedSessionDragOver = (event, targetSessionId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.kind !== 'session' || !drag.ungrouped || drag.sessionId === targetSessionId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+          event.dataTransfer.dropEffect = 'move';
+        } catch {
+          /* ignore */
+        }
+        const zone = rowDropZone(event);
+        setDropHint({
+          kind: 'row',
+          id: targetSessionId,
+          position: zone === 'after' ? 'after' : 'before',
+        });
+      };
+
+      const handleUngroupedSessionDrop = (event, targetSessionId) => {
+        const drag = dragRef.current;
+        if (!drag || drag.kind !== 'session' || !drag.ungrouped || drag.sessionId === targetSessionId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const zone = rowDropZone(event);
+        commitUngroupedReorder(drag.sessionId, targetSessionId, zone === 'after' ? 'after' : 'before');
+      };
+
+      const handleUngroupedBodyDragOver = (event) => {
+        const drag = dragRef.current;
+        if (!drag || !drag.ungrouped) return;
+        event.preventDefault();
+        event.stopPropagation();
+      };
+
+      const handleUngroupedBodyDrop = (event) => {
+        const drag = dragRef.current;
+        if (!drag || !drag.ungrouped) return;
+        event.preventDefault();
+        event.stopPropagation();
+        commitUngroupedReorder(drag.sessionId, undefined, 'end');
+      };
+
       const toggleWorkspace = (workspaceId) => {
         setPrefs((previous) => {
           const collapsed = { ...(previous.collapsedWorkspaces ?? {}) };
@@ -4294,6 +4938,15 @@ window.__ModuleLoader__.load({
         };
       };
 
+      const subagentStatusFor = (entry) => {
+        if (!entry || entry.mode === 'external') return null;
+        if (!subagentRunningFor(list, entry.id, sessionStatusesMap)) return null;
+        return {
+          state: 'ongoing',
+          label: tr('status.running'),
+        };
+      };
+
       const watermarkRows = (sessionIds, watermark) => {
         let count = 0;
         const rows = sessionIds.filter((sessionId) => {
@@ -4353,8 +5006,13 @@ window.__ModuleLoader__.load({
         };
       };
 
-      const renderSessionRow = (sessionId, workspaceId, groupId) => {
+      const renderSessionRow = (sessionId, workspaceId, groupId, options = {}) => {
         const active = activePanelId === null && currentSessionId === sessionId;
+        const canDrag = options.canDrag !== undefined
+          ? options.canDrag === true
+          : Boolean(workspaceId) && !query
+            && list.byId?.[sessionId]?.blank !== true
+            && !archivedSessionIds.has(sessionId);
         let dropPos = dropHint?.kind === 'row' && dropHint.id === sessionId ? dropHint.position : null;
         if (dropHint?.kind === 'top' && dropHint.key === topKeyOfSession(sessionId)) {
           dropPos = dropHint.position;
@@ -4378,9 +5036,10 @@ window.__ModuleLoader__.load({
           dragging: dragInfo?.sessionId === sessionId,
           dropPos,
           dropGroup,
-          canDrag: Boolean(workspaceId) && !query
-            && list.byId?.[sessionId]?.blank !== true
-            && !archivedSessionIds.has(sessionId),
+          subagentCount: Array.isArray(options.subagentCatalog) ? options.subagentCatalog.length : 0,
+          subagentsExpanded: options.subagentsExpanded === true,
+          onToggleSubagents: options.onToggleSubagents,
+          canDrag,
           t: tr,
           onOpen: (id) => openSession(id),
           onRenameStart: () => beginSessionRename(sessionId),
@@ -4390,11 +5049,80 @@ window.__ModuleLoader__.load({
           onArchive: (id) => handleArchive(id),
           onUnarchive: (id) => handleUnarchive(id),
           onMenu: (event, id) => openSessionMenu(event, workspaceId, groupId, id),
-          onDragStart: (event, id) => handleDragStart(event, id, workspaceId, groupId),
-          onDragOver: (event, id) => handleRowDragOver(event, workspaceId, groupId, id),
-          onDrop: (event, id) => handleRowDrop(event, workspaceId, groupId, id),
-          onDragEnd: handleDragEnd,
+          onDragStart: options.onDragStart ?? ((event, id) => handleDragStart(event, id, workspaceId, groupId)),
+          onDragOver: options.onDragOver ?? (canDrag
+            ? (event, id) => handleRowDragOver(event, workspaceId, groupId, id)
+            : undefined),
+          onDrop: options.onDrop ?? (canDrag
+            ? (event, id) => handleRowDrop(event, workspaceId, groupId, id)
+            : undefined),
+          onDragEnd: options.onDragEnd ?? handleDragEnd,
         });
+      };
+
+      const renderSubagentRow = (parentSessionId, entry) => {
+        const label = subagentLabelOf(entry);
+        const external = entry.mode === 'external';
+        const status = subagentStatusFor(entry);
+        const active = activePanelId === null && currentSessionId === entry.id;
+        return h(
+          'div',
+          {
+            key: 'subagent:' + entry.id,
+            className: 'dsg-subagentRow'
+              + (external ? ' disabled' : '')
+              + (active ? ' active' : ''),
+            role: external ? undefined : 'button',
+            tabIndex: external ? undefined : 0,
+            title: label,
+            'data-subagent-id': entry.id,
+            onClick: external ? undefined : () => openSubagentSession(parentSessionId, entry),
+            onKeyDown: external ? undefined : (event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+              event.preventDefault();
+              openSubagentSession(parentSessionId, entry);
+            },
+          },
+          h(IconSubagent, { width: 14, height: 14, className: 'dsg-subagentRowIcon' }),
+          status
+            ? h(
+                'span',
+                {
+                  className: 'dsg-subagentStatusSlot',
+                  title: status.label,
+                  'aria-label': status.label,
+                },
+                h(StateDot, { state: status.state }),
+              )
+            : null,
+          h('span', { className: 'dsg-subagentTitle' }, label),
+        );
+      };
+
+      const renderSessionNode = (sessionId, workspaceId, groupId, options = {}) => {
+        const catalog = subagentCatalogOf(sessionId);
+        const expanded = catalog.length > 0 && expandedSubagentSessions.has(sessionId);
+        const row = renderSessionRow(sessionId, workspaceId, groupId, {
+          ...options,
+          subagentCatalog: catalog,
+          subagentsExpanded: expanded,
+          onToggleSubagents: toggleSubagentSession,
+        });
+        if (!expanded) return row;
+        return h(
+          React.Fragment,
+          { key: sessionId },
+          row,
+          h(
+            'div',
+            {
+              className: 'dsg-subagentList',
+              role: 'group',
+              'aria-label': tr('subagents.label'),
+            },
+            catalog.map((entry) => renderSubagentRow(sessionId, entry)),
+          ),
+        );
       };
 
       const renderGroup = (workspace, node) => {
@@ -4487,7 +5215,7 @@ window.__ModuleLoader__.load({
                     if (key.startsWith('s:')) {
                       const sessionId = key.slice(2);
                       if (!visibleSessionKeys.has(key)) continue;
-                      body.push(renderSessionRow(sessionId, workspace.workspaceId, group.id));
+                      body.push(renderSessionNode(sessionId, workspace.workspaceId, group.id));
                       if (key === lastVisibleSessionKey && overflow.button) body.push(overflow.button);
                     } else if (key.startsWith('g:')) {
                       const child = childByKey.get(key);
@@ -4503,22 +5231,109 @@ window.__ModuleLoader__.load({
 
       const renderWorkspace = (section, depth = 0) => {
         if (section.ungroupedOnly) {
-          const globalOverflow = overflowFor('global:ungrouped', section.ungrouped);
+          // DSH treats sessions outside every registered Workspace as one
+          // trailing pseudo-workspace. Mirror it here: folder header, chevron,
+          // collapse state, row order, status summary, and drag ordering all
+          // behave like a real Workspace, but there are no workspace actions.
+          const collapsed = section.collapsed === true;
+          const allIds = Array.isArray(section.ungroupedAll) ? section.ungroupedAll : section.ungrouped;
+          const ungroupedOverflow = overflowFor('ungrouped:' + section.key, section.ungrouped);
+          const ungroupedActive = activePanelId === null
+            && currentSessionId !== null
+            && allIds.includes(currentSessionId);
+          const ungroupedSelected = collapsed && ungroupedActive;
+          const collapsedStatuses = [];
+          if (collapsed) {
+            const buckets = new Map();
+            for (const sessionId of allIds) {
+              if (!isVisible(sessionId)) continue;
+              const info = statusInfoFor(sessionId);
+              if (!info.showStatus) continue;
+              const state = info.primaryStatus.state;
+              const bucket = buckets.get(state) ?? {
+                state,
+                label: info.primaryStatus.label,
+                count: 0,
+                priority: state === 'warning' ? 0 : state === 'ongoing' ? 1 : 2,
+              };
+              bucket.count += 1;
+              buckets.set(state, bucket);
+            }
+            collapsedStatuses.push(...[...buckets.values()].sort((left, right) => (
+              left.priority - right.priority
+            )));
+          }
           return h(
             'section',
-            { className: 'dsg-workspace', key: section.key },
+            { className: 'dsg-workspace dsg-ungroupedSection', key: section.key },
             h(
               'div',
-              { className: 'dsg-ungroupedHeader' },
-              h(IconGroup, { width: 14, height: 14 }),
-              tr('ungrouped'),
+              {
+                className: 'dsg-wsHeader dsg-ungroupedWsHeader'
+                  + (ungroupedActive ? ' active' : '')
+                  + (ungroupedSelected ? ' selected' : ''),
+                role: 'button',
+                tabIndex: 0,
+                'data-ungrouped': 'true',
+                'aria-expanded': !collapsed,
+                'aria-current': ungroupedSelected ? 'true' : undefined,
+                title: tr('ungrouped'),
+                onClick: () => toggleWorkspace(UNGROUPED_KEY),
+                onKeyDown: (event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleWorkspace(UNGROUPED_KEY);
+                  }
+                },
+              },
+              h('span', { className: 'dsg-folder' }, h(collapsed ? IconFolderClose : IconFolderOpen)),
+              h(
+                'span',
+                { className: 'dsg-wsChevron' + (collapsed ? '' : ' open') },
+                h(IconTriangle, { width: 15, height: 15 }),
+              ),
+              collapsedStatuses.length > 0
+                ? h(
+                    'span',
+                    {
+                      className: 'dsg-wsStatuses',
+                      title: collapsedStatuses.map((status) => (
+                        status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                      )).join('，'),
+                      'aria-label': collapsedStatuses.map((status) => (
+                        status.count > 1 ? `${status.label} ×${status.count}` : status.label
+                      )).join('，'),
+                    },
+                    collapsedStatuses.map((status) => h(
+                      'span',
+                      { key: status.state, className: 'dsg-wsStatusItem' },
+                      h(StateDot, { state: status.state }),
+                      status.count > 1
+                        ? h('span', { className: 'dsg-wsStatusCount' }, String(status.count))
+                        : null,
+                    )),
+                  )
+                : null,
+              h('span', { className: 'dsg-wsName' }, tr('ungrouped')),
             ),
-            h(
-              'div',
-              { className: 'dsg-simpleList' },
-              globalOverflow.rows.map((sessionId) => renderSessionRow(sessionId, null, null)),
-              globalOverflow.button,
-            ),
+            collapsed
+              ? null
+              : h(
+                  'div',
+                  {
+                    className: 'dsg-wsBody dsg-ungroupedBody',
+                    onDragOver: handleUngroupedBodyDragOver,
+                    onDrop: handleUngroupedBodyDrop,
+                  },
+                  ungroupedOverflow.rows.map((sessionId) => renderSessionNode(sessionId, null, null, {
+                    canDrag: list.byId?.[sessionId]?.blank !== true && !archivedSessionIds.has(sessionId),
+                    onDragStart: handleUngroupedSessionDragStart,
+                    onDragOver: handleUngroupedSessionDragOver,
+                    onDrop: handleUngroupedSessionDrop,
+                  })),
+                  ungroupedOverflow.button,
+                ),
           );
         }
         const { workspace, groups, ungrouped, collapsed } = section;
@@ -4699,7 +5514,7 @@ window.__ModuleLoader__.load({
                 topItems.map((item) => (
                   item.kind === 'group'
                     ? renderGroup(workspace, item.node)
-                    : renderSessionRow(item.id, workspace.workspaceId, null)
+                    : renderSessionNode(item.id, workspace.workspaceId, null)
                 )),
                 ungroupedOverflow.button,
                 h(
@@ -4721,7 +5536,7 @@ window.__ModuleLoader__.load({
         for (const section of sections) {
           if (section.ungroupedOnly) {
             for (const sessionId of section.ungrouped) {
-              children.push(renderSessionRow(sessionId, null, null));
+              children.push(renderSessionNode(sessionId, null, null));
             }
             continue;
           }
@@ -4729,7 +5544,7 @@ window.__ModuleLoader__.load({
             if (item.kind === 'group') {
               children.push(renderGroup(section.workspace, item.node));
             } else {
-              children.push(renderSessionRow(item.id, section.workspace.workspaceId, null));
+              children.push(renderSessionNode(item.id, section.workspace.workspaceId, null));
             }
           }
         }
@@ -5308,8 +6123,13 @@ window.__ModuleLoader__.load({
           () => ctx.locale.register(NS, { zh: ZH, en: EN }),
           'session-groups: locale dictionaries',
         );
+        ctx.effect(
+          () => startSessionGroupsBridge(),
+          'session-groups: agent tool bridge',
+        );
 
         const modeStore = createViewModeStore();
+
         const injected = () => ({
           setGroupedMode: (next) => modeStore.set(next),
           openSession: (sessionId) => ctx.uiWorkspace.openSession(sessionId),

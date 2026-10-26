@@ -17,6 +17,7 @@ flowchart TB
     H1["会话 Sessions"]
     H2["工作区 Workspaces"]
     H3["状态 / 归档 / 置顶 / 当前会话"]
+    TOOL["agent tool：session_groups<br/>Host 审核 + 请求中转"]
   end
 
   subgraph WEB["DSH Web 浏览器"]
@@ -30,6 +31,7 @@ flowchart TB
       DERIVE["派生视图模型<br/>sections / treeLayout / group tree"]
       UI["React UI<br/>Workspace / Group / SessionRow / Menu"]
       ACT["交互层<br/>点击 / 菜单 / HTML5 拖拽"]
+      BRIDGE["bridge poller<br/>读取快照 / 执行 apply"]
     end
 
     STORE[("session-groups 本地视图状态<br/>localStorage: dsh.session-groups.v1")]
@@ -48,6 +50,8 @@ flowchart TB
   ACT -->|"视图操作<br/>分组 / 嵌套 / 排序 / 折叠 / 换色"| STORE
   STORE -->|"loadPrefs / reconcile"| BROWSER
   ACT -->|"官方操作<br/>打开 / 重命名 / 归档 / 新建工作区"| HOST
+  TOOL -->|"审核通过的 read / apply 请求"| BRIDGE
+  BRIDGE -->|"读 localStorage / 校验后写入"| STORE
   HOST -->|"新快照"| BROWSER
 ```
 
@@ -108,6 +112,9 @@ sequenceDiagram
 | 组和子组折叠状态 | 插件本地 | 写入 localStorage |
 | 组内顺序 / 顶层顺序 / 子工作区顺序 | 插件本地 | 写入 localStorage |
 | 工作区树 / 单列表 / 隐藏归档 | 插件本地 | 写入 localStorage |
+| AI 整理请求 | Host 工具审核 + 浏览器校验 | 审核通过后由浏览器写入同一份本地状态 |
+| 不属于任何工作区的会话 | DSH Host 会话列表 | 汇总为末尾「未分组」伪工作区；顺序与折叠写浏览器本地 |
+| 子代理运行状态 | DSH Session 状态 + `subagentTiming` | 父会话聚合直接子代理，子行显示自身状态 |
 
 ---
 
@@ -227,7 +234,54 @@ DSH Host / 数据服务
 
 ---
 
-## 7. 冲突与 reconcile
+## 7. Agent 工具桥
+
+`session_groups` 是 Host 侧的 agent 工具；浏览器仍是分组数据的唯一所有者。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Model as Agent / 模型
+  participant Tool as session_groups（Host）
+  participant Approval as DSH Approval
+  participant Route as Host bridge mailbox
+  participant Client as client.js bridge poller
+  participant Store as session-groups localStorage
+
+  Model->>Tool: action=read
+  Tool->>Route: 入队 snapshot 请求
+  Client->>Route: 轮询并领取请求
+  Client->>Store: loadPrefs() + 当前工作区/会话快照
+  Client-->>Tool: 返回工作区、会话、分组
+  Tool-->>Model: read 结果（不修改）
+
+  Model->>Tool: action=apply + 完整分组方案
+  Tool->>Tool: 结构校验（id / 父组 / 3 层 / 重复会话）
+  Tool->>Approval: 请求用户审核（附改动摘要）
+  Approval-->>Tool: allowed-once / rejected / cancelled / unavailable
+  alt 未批准
+    Tool-->>Model: 拒绝，不写任何数据
+  else 已批准
+    Tool->>Route: 入队 apply 请求
+    Client->>Route: 领取请求
+    Client->>Client: 校验工作区归属、会话恰好覆盖一次、id 冲突
+    Client->>Store: 替换该工作区分组 + 顺序
+    Client-->>Tool: 返回写入摘要
+    Tool-->>Model: apply 结果
+  end
+```
+
+约束：
+
+- `read` 不需要审核；`apply` 必须得到一次性的用户批准。
+- 方案必须覆盖指定工作区的每个可见会话且恰好一次。
+- 分组数据不迁移到 Host；Host mailbox 只是短生命周期请求队列，插件卸载即清空。
+- 浏览器端校验失败时，即使已经审核通过也不会写入。
+- bridge 需要分组视图处于挂载状态；原版视图下没有可读的本地分组快照。
+
+---
+
+## 8. 冲突与 reconcile
 
 严格来说多数不是“字段冲突”，而是**本地引用失效**。
 
@@ -263,19 +317,31 @@ reconcile 时机：
 
 ---
 
-## 8. 文件地图
+## 9. 未分组伪工作区
+
+DSH 原版把不属于任何已注册工作区的会话放在列表末尾的 **Ungrouped** 分组。本插件沿用同一结构：
+
+- 未分组行使用与普通工作区相同的文件夹标题、折叠箭头和展开 / 收起状态
+- 会话顺序为：当前空白会话 → 置顶会话 → 其余；其余默认按最近更新，拖动后写入浏览器本地手动顺序
+- 折叠状态和手动顺序保存在 `collapsedWorkspaces.__ungrouped__` / `manualOrders.__ungrouped__`
+- 没有重命名、删除、新建会话等工作区操作；它只是 Host 会话列表的末尾桶
+- 工作区树和单列表模式下仍作为末尾桶处理，不伪造 Host 工作区
+
+---
+
+## 10. 文件地图
 
 | 文件 | 作用 |
 |---|---|
-| `client.js` | 插件全部运行时、派生渲染、拖拽、本地状态、UI、i18n |
-| `index.js` | 插件入口声明 |
+| `client.js` | 浏览器运行时：派生渲染、拖拽、本地状态、UI、i18n、agent bridge 客户端 |
+| `index.js` | Host 入口：`session_groups` 工具、用户审核、bridge 请求队列与 Web 路由 |
 | `locale/*.json` | 插件元数据本地化 |
 | `docs/` | 预览图、主题图、架构文档 |
 | `README.md` | 使用说明与功能预览 |
 
 ---
 
-## 9. 一句话架构
+## 11. 一句话架构
 
 ```text
 DSH Host（事实）
@@ -290,4 +356,5 @@ DSH Host（事实）
 ```
 
 用户拖动、折叠、换色时，主要是在编辑 **session-groups 本地视图状态**；  
-打开、重命名、归档、建工作区时，才是通过 DSH 官方 API 修改 **Host 事实数据**。
+打开、重命名、归档、建工作区时，才是通过 DSH 官方 API 修改 **Host 事实数据**。  
+AI 通过 `session_groups` 工具走同一套本地状态：Host 只审核并中转请求，浏览器负责校验与写入。
