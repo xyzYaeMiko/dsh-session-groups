@@ -11,7 +11,7 @@
   <br>
   支持 <strong>DSH Web / DSH Desktop</strong>；支持子代理展开与状态联动。
   <br><br>
-  <code>v0.4.0</code> · DSH Web / Desktop Plugin · MIT
+  <code>v0.4.1</code> · DSH Web / Desktop Plugin · MIT
 </p>
 
 <p align="center">
