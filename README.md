@@ -7,7 +7,7 @@
 <p align="center">
   把 <strong>Edge 浏览器的标签页分组</strong>体验，搬到 DSH Web / Desktop 的会话侧栏。
   <br>
-  <strong>彩色分组、折叠、拖动排序、状态汇总</strong>，让一长串会话重新变得可管理；也可以让 AI 读取现状、经你审核后整理分组。
+  <strong>彩色分组、折叠、拖动排序、状态汇总</strong>，让一长串会话重新变得可管理。
   <br>
   支持 <strong>DSH Web / DSH Desktop</strong>；支持子代理展开与状态联动。
   <br><br>
