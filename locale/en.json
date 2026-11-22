@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Session Groups",
-    "description": "Edge-style session groups for DSH Web/Desktop: colored groups, drag ordering, workspace tree, subagent browsing, and an approval-gated agent organization tool."
+    "description": "Edge-style session groups for DSH Web/Desktop: colored groups, drag ordering, workspace tree, subagent browsing, session/group/workspace data panels, an approval-gated agent organization tool, and permanent session deletion."
   }
 }

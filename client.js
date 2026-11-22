@@ -100,7 +100,13 @@ window.__ModuleLoader__.load({
 
     const BRIDGE_GLOBAL = '__DSH_SESSION_GROUPS_BRIDGE__';
     const BRIDGE_EVENT = 'dsh-session-groups:prefs';
+    const ARCHIVE_EVENT = 'dsh-session-groups:archive-followup';
+    const BRIDGE_TOKEN_HEADER = 'x-dsh-session-groups-token';
+    const BRIDGE_PATH = '/dsh-session-groups-bridge';
+    const LIVE_DATA_TTL_MS = 15000;
+    const liveDataCache = new Map();
     let bridgeSnapshotProvider = null;
+    let runningLightPreference = true;
     function groupColorVars(color) {
       return {
         '--dsg-group-color-light': color,
@@ -251,6 +257,111 @@ window.__ModuleLoader__.load({
       'subagents.expand': '展开子代理',
       'subagents.collapse': '收起子代理',
       'subagents.label': '子代理',
+      'settings.nav': '会话分组',
+      'settings.title': '会话分组',
+      'settings.intro': '调整侧栏分组的显示方式。',
+      'settings.runningLight': '运行状态使用蓝色信号灯',
+      'settings.runningLightHint': '默认显示蓝色信号灯；关闭后使用转圈加载图标。',
+      'settings.pricing': '费用估算价格',
+      'settings.peak': '高峰',
+      'settings.offPeak': '空闲',
+      'settings.savePrices': '保存价格',
+      'settings.holidays': '法定节假日',
+      'settings.holidaysPlaceholder': '2026-10-01, 2026-10-02',
+      'settings.holidaysHint': '可选，YYYY-MM-DD 逗号分隔；这些日期按空闲时段计价。',
+      'settings.pricingHint': '默认填入 DeepSeek Flash 官方价格（2026-11，人民币 / 百万 tokens）；高峰为工作日 09:00–12:00、14:00–18:00（Asia/Shanghai）。缓存写没有独立官方价格，默认按未命中输入价（与其他 DSH 费用插件一致）。',
+      'settings.priceInput': '输入',
+      'settings.priceCacheRead': '缓存读',
+      'settings.priceCacheWrite': '缓存写',
+      'settings.priceOutput': '输出',
+      'data.open': '数据',
+      'data.activity': '活动',
+      'data.aggSum': '求和',
+      'data.aggAverage': '平均',
+      'data.aggregationHint': '组/工作区统计：活动、Token、费用求和；上下文按会话平均。',
+      'data.usage': 'Token',
+      'data.steps': '步',
+      'data.llmTime': '模型用时',
+      'data.toolTime': '工具用时',
+      'data.ttft': '首 token 平均',
+      'data.speed': '输出速度',
+      'data.reasoning': '推理',
+      'data.system': '系统',
+      'data.messages': '消息',
+      'data.remaining': '剩余',
+      'data.noBreakdown': '暂无上下文构成数据',
+      'data.toolNoHost': '工具数据暂不可用（需重启 DSH 加载 Host 接口）',
+      'data.toolHostUnavailable': '会话分组插件 Host bridge 未加载；请完整重启 DSH 后刷新页面。',
+      'data.toolReadError': '工具数据读取失败；Token 统计不受影响。',
+      'data.toolNonActive': '归档或非活跃会话不提供工具明细；Token 统计仍可用。',
+      'data.toolSkippedNonActive': '另有 {count} 个归档/非活跃会话未计入工具统计。',
+      'data.toolPartialError': '另有 {count} 个会话的工具数据读取失败。',
+      'data.toolNoVisible': '该活跃会话没有可见工具或调用记录。',
+      'data.title.session': '会话数据',
+      'data.title.group': '组数据',
+      'data.title.workspace': '工作区数据',
+      'data.group': '组',
+      'data.workspace': '工作区',
+      'data.close': '关闭',
+      'data.refresh': '刷新',
+      'data.tokens': 'Tokens',
+      'data.cacheHit': '缓存命中',
+      'data.cacheHint': '缓存命中 = 缓存读取 /（输入 + 缓存读取 + 缓存写入）',
+      'data.cost': '估算费用',
+      'data.models': '模型',
+      'data.modelTimeHint': '按模型选择时间段估算使用时长。',
+      'data.noTimeShort': '无时长',
+      'data.noUsageData': '缺少 Token 用量数据，无法显示准确统计。',
+      'data.partialUsage': '部分会话缺少 Token 数据，汇总不完整。',
+      'data.noStatsData': '缺少活动统计数据。',
+      'data.partialStats': '部分会话缺少活动统计，汇总不完整。',
+      'data.partialBreakdown': '部分会话缺少上下文构成，平均仅覆盖有数据的会话。',
+      'data.noCostUsage': '缺少 Token 用量，无法计算费用。',
+      'data.modelTimeUnavailable': '没有模型使用时长数据，仅显示最后已知模型。',
+      'data.modelTimePartial': '部分会话缺少模型使用时长，占比不完整。',
+      'data.toolSnapshot': '工具可见性来自会话请求头的历史快照，可能不是当前注册表。',
+      'data.incompleteHint': '部分数据缺失、不完整或为估算值；展开对应行查看说明。',
+      'data.fileSize': '会话文件',
+      'data.fileEvents': '事件数',
+      'data.fileSessions': '有数据会话',
+      'data.fileSizeHint': '压缩后的 session.v4.jsonl.zstd 磁盘大小。',
+      'data.fileSizeUnavailable': 'Host 未提供会话文件大小。',
+      'data.fileSizePartial': '部分会话缺少文件大小。',
+      'data.fileEventPartial': '部分会话缺少事件数。',
+      'data.peak': '高峰',
+      'data.offPeak': '空闲',
+      'data.peakSchedule': '高峰：工作日 09:00–12:00、14:00–18:00（Asia/Shanghai）',
+      'data.estimatedPeriod': '归档会话没有逐时段数据，费用按当前时段估算。',
+      'data.missingPeriodPrice': '部分时段未配置价格，无法计算完整费用。',
+      'data.costPartial': '部分会话缺少费用数据，总费用仅累计可计算的会话。',
+      'data.noPeriodData': '部分会话缺少逐时段 Token 数据，费用无法计算。',
+      'data.costDetails': '费用明细',
+      'data.price': '单价',
+      'data.amount': '金额',
+      'data.perMillion': '¥ / 百万 tokens',
+      'data.toolsAvailable': '已开放',
+      'data.toolsClosed': '未开放',
+      'data.noAvailableTools': '没有已开放的工具',
+      'data.noClosedTools': '没有未对该会话开放的工具',
+      'data.item': '项目',
+      'data.context': '上下文',
+      'data.sessions': '会话',
+      'data.turns': '轮次',
+      'data.tokenBreakdown': 'Token 明细',
+      'data.input': '输入',
+      'data.cacheRead': '缓存读',
+      'data.cacheWrite': '缓存写',
+      'data.output': '输出',
+      'data.tools': '工具',
+      'data.toolCalls': '调用',
+      'data.toolErrors': '失败',
+      'data.noTools': '暂无工具数据',
+      'data.toolsLiveOnly': '仅活跃会话提供工具明细；归档会话仍保留 Token 统计。',
+      'data.toolsScope': '列表包含全局注册表、当前会话可见的 scoped 工具和本会话调用记录；不包含其他 Agent 或预设的 scoped 工具。',
+      'data.noPrice': '未配置价格',
+      'data.priceHint': '在设置 → 会话分组中填写价格',
+      'data.loading': '加载中…',
+      'data.note': '数据来自会话日志，费用为估算值',
       'group.collapse': '折叠分组',
       'group.expand': '展开分组',
       'group.dissolve': '解散分组',
@@ -268,9 +379,40 @@ window.__ModuleLoader__.load({
       'session.removeFromGroup': '从分组中移出',
       'session.moveToGroup': '移入「{name}」',
       'session.archive': '归档会话',
+      'session.archived': '已归档',
+      'schedule.untitled': '未命名任务',
+      'schedule.mark': '有 {count} 个自动化任务',
+      'schedule.more': '还有 {count} 个任务',
+      'schedule.separator': ' · ',
+      'schedule.relative.soon': '即将',
+      'schedule.relative.minutes': '{n} 分钟后',
+      'schedule.relative.hours': '{n} 小时后',
+      'schedule.relative.days': '{n} 天后',
+      'schedule.freq.minutely': '每分钟',
+      'schedule.freq.hourly': '每小时',
+      'schedule.freq.daily': '每天',
+      'schedule.freq.weekly': '每周',
+      'schedule.freq.monthly': '每月',
+      'schedule.freq.custom': '定时',
       'session.unarchive': '取消归档',
       'session.fork': '分叉会话',
       'session.copyId': '复制 Session ID',
+      'session.delete': '删除会话',
+      'delete.title': '删除会话',
+      'delete.current': '当前会话不能删除',
+      'delete.warning': '点击「永久删除」后立即执行，且无法恢复。',
+      'delete.willDo': '将执行',
+      'delete.willRemove': '删除会话日志、投影缓存和工作区引用',
+      'delete.willStop': '停止正在运行的会话及其子代理',
+      'delete.willCascade': '同时删除 {count} 个子代理会话',
+      'delete.checking': '正在检查会话…',
+      'delete.children': '同时删除 {count} 个子代理会话',
+      'delete.running': '会话仍在运行，停止后删除',
+      'delete.confirm': '我确认永久删除',
+      'delete.cancel': '取消',
+      'delete.action': '永久删除',
+      'delete.deleting': '删除中…',
+      'delete.done': '会话已删除',
       'notice.grouped': '已放入分组',
       'notice.ungrouped': '已移出分组',
       'notice.groupDissolved': '已解散分组',
@@ -284,6 +426,9 @@ window.__ModuleLoader__.load({
       'notice.copied': '已复制会话 ID',
       'notice.copyFailed': '复制失败：{reason}',
       'notice.archiveFailed': '归档失败：{reason}',
+      'notice.archiveFollowupFailed': '归档后续操作失败：{reason}',
+      'notice.archiveFollowupSettled': '归档后续操作已完成',
+      'notice.archiveFailedUnknown': '未知原因',
       'notice.pinFailed': '置顶失败：{reason}',
       'notice.renameFailed': '重命名失败：{reason}',
       'notice.forkFailed': '分叉失败：{reason}',
@@ -400,6 +545,111 @@ window.__ModuleLoader__.load({
       'subagents.expand': 'Show subagents',
       'subagents.collapse': 'Hide subagents',
       'subagents.label': 'Subagents',
+      'settings.nav': 'Session Groups',
+      'settings.title': 'Session Groups',
+      'settings.intro': 'Adjust how session groups are displayed in the sidebar.',
+      'settings.runningLight': 'Use a blue running light',
+      'settings.runningLightHint': 'Blue status light is on by default; turn it off to use the spinning loader.',
+      'settings.pricing': 'Cost estimate prices',
+      'settings.peak': 'Peak',
+      'settings.offPeak': 'Off-peak',
+      'settings.savePrices': 'Save prices',
+      'settings.holidays': 'Public holidays',
+      'settings.holidaysPlaceholder': '2026-10-01, 2026-10-02',
+      'settings.holidaysHint': 'Optional; comma-separated YYYY-MM-DD dates billed as off-peak.',
+      'settings.pricingHint': 'Defaults are the DeepSeek Flash official CNY prices (2026-11) per million tokens; peak is weekdays 09:00–12:00 and 14:00–18:00 Asia/Shanghai. Cache writes use the input rate when no separate price is published.',
+      'settings.priceInput': 'Input',
+      'settings.priceCacheRead': 'Cache read',
+      'settings.priceCacheWrite': 'Cache write',
+      'settings.priceOutput': 'Output',
+      'data.open': 'Data',
+      'data.activity': 'Activity',
+      'data.aggSum': 'sum',
+      'data.aggAverage': 'avg',
+      'data.aggregationHint': 'Group/workspace totals: activity, tokens, and cost are summed; context is averaged per session.',
+      'data.usage': 'Token',
+      'data.steps': 'Steps',
+      'data.llmTime': 'LLM time',
+      'data.toolTime': 'Tool time',
+      'data.ttft': 'Avg TTFT',
+      'data.speed': 'Output speed',
+      'data.reasoning': 'Reasoning',
+      'data.system': 'System',
+      'data.messages': 'Messages',
+      'data.remaining': 'Remaining',
+      'data.noBreakdown': 'No context breakdown data',
+      'data.toolNoHost': 'Tool data unavailable (restart DSH to load the Host API)',
+      'data.toolHostUnavailable': 'The session-groups Host bridge is not loaded; fully restart DSH and refresh the page.',
+      'data.toolReadError': 'Failed to read tool data; token totals are unaffected.',
+      'data.toolNonActive': 'Archived or inactive sessions do not provide tool details; token totals remain available.',
+      'data.toolSkippedNonActive': '{count} archived/inactive sessions were excluded from tool statistics.',
+      'data.toolPartialError': 'Tool data failed for {count} sessions.',
+      'data.toolNoVisible': 'This live session has no visible tools or tool calls.',
+      'data.title.session': 'Session data',
+      'data.title.group': 'Group data',
+      'data.title.workspace': 'Workspace data',
+      'data.group': 'Group',
+      'data.workspace': 'Workspace',
+      'data.close': 'Close',
+      'data.refresh': 'Refresh',
+      'data.tokens': 'Tokens',
+      'data.cacheHit': 'Cache hit',
+      'data.cacheHint': 'Cache hit = cache read / (input + cache read + cache write)',
+      'data.cost': 'Est. cost',
+      'data.models': 'Models',
+      'data.modelTimeHint': 'Usage time is estimated from model-selection intervals.',
+      'data.noTimeShort': 'no duration',
+      'data.noUsageData': 'Token usage data is unavailable; accurate totals cannot be shown.',
+      'data.partialUsage': 'Some sessions lack token data; the total is incomplete.',
+      'data.noStatsData': 'Activity statistics are unavailable.',
+      'data.partialStats': 'Some sessions lack activity statistics; the total is incomplete.',
+      'data.partialBreakdown': 'Some sessions lack a context breakdown; the average covers only sessions with data.',
+      'data.noCostUsage': 'Token usage is unavailable, so cost cannot be calculated.',
+      'data.modelTimeUnavailable': 'No model usage-time data; only the last known model is shown.',
+      'data.modelTimePartial': 'Some sessions lack model usage time; shares are incomplete.',
+      'data.toolSnapshot': 'Tool visibility comes from the historical request-header snapshot and may differ from the current registry.',
+      'data.incompleteHint': 'Some data is missing, incomplete, or estimated; expand the relevant row for details.',
+      'data.fileSize': 'Session file',
+      'data.fileEvents': 'Events',
+      'data.fileSessions': 'Sessions with data',
+      'data.fileSizeHint': 'Compressed on-disk size of session.v4.jsonl.zstd.',
+      'data.fileSizeUnavailable': 'The Host did not provide a session file size.',
+      'data.fileSizePartial': 'Some sessions lack file-size data.',
+      'data.fileEventPartial': 'Some sessions lack event counts.',
+      'data.peak': 'Peak',
+      'data.offPeak': 'Off-peak',
+      'data.peakSchedule': 'Peak: weekdays 09:00–12:00 and 14:00–18:00 Asia/Shanghai',
+      'data.estimatedPeriod': 'Archived sessions have no per-period data; cost is estimated using the current period.',
+      'data.missingPeriodPrice': 'Some periods have no configured price; the full cost cannot be calculated.',
+      'data.costPartial': 'Some sessions lack cost data; the total includes only sessions with calculable cost.',
+      'data.noPeriodData': 'Some sessions lack per-period token data, so cost cannot be calculated.',
+      'data.costDetails': 'Cost details',
+      'data.price': 'Price',
+      'data.amount': 'Amount',
+      'data.perMillion': '¥ / 1M tokens',
+      'data.toolsAvailable': 'Available',
+      'data.toolsClosed': 'Not available',
+      'data.noAvailableTools': 'No available tools',
+      'data.noClosedTools': 'No tools are withheld from this session',
+      'data.item': 'Item',
+      'data.context': 'Context',
+      'data.sessions': 'Sessions',
+      'data.turns': 'Turns',
+      'data.tokenBreakdown': 'Token breakdown',
+      'data.input': 'Input',
+      'data.cacheRead': 'Cache read',
+      'data.cacheWrite': 'Cache write',
+      'data.output': 'Output',
+      'data.tools': 'Tools',
+      'data.toolCalls': 'calls',
+      'data.toolErrors': 'errors',
+      'data.noTools': 'No tool data',
+      'data.toolsLiveOnly': 'Tool details are available for live sessions only; archived sessions keep token totals.',
+      'data.toolsScope': 'The list covers the global registry, scoped tools visible to this session, and this session’s call history; it does not include scoped tools from other agents or presets.',
+      'data.noPrice': 'No prices configured',
+      'data.priceHint': 'Set them in Settings → Session Groups',
+      'data.loading': 'Loading…',
+      'data.note': 'Data comes from the session log; costs are estimates',
       'group.collapse': 'Collapse group',
       'group.expand': 'Expand group',
       'group.dissolve': 'Dissolve group',
@@ -417,9 +667,40 @@ window.__ModuleLoader__.load({
       'session.removeFromGroup': 'Remove from group',
       'session.moveToGroup': 'Move into “{name}”',
       'session.archive': 'Archive session',
+      'session.archived': 'Archived',
+      'schedule.untitled': 'Untitled task',
+      'schedule.mark': '{count} scheduled tasks',
+      'schedule.more': '{count} more tasks',
+      'schedule.separator': ' · ',
+      'schedule.relative.soon': 'soon',
+      'schedule.relative.minutes': 'in {n} min',
+      'schedule.relative.hours': 'in {n} h',
+      'schedule.relative.days': 'in {n} d',
+      'schedule.freq.minutely': 'Every minute',
+      'schedule.freq.hourly': 'Hourly',
+      'schedule.freq.daily': 'Daily',
+      'schedule.freq.weekly': 'Weekly',
+      'schedule.freq.monthly': 'Monthly',
+      'schedule.freq.custom': 'Scheduled',
       'session.unarchive': 'Unarchive session',
       'session.fork': 'Fork session',
       'session.copyId': 'Copy Session ID',
+      'session.delete': 'Delete session',
+      'delete.title': 'Delete session',
+      'delete.current': 'Current session cannot be deleted',
+      'delete.warning': 'Clicking “Delete permanently” runs immediately and cannot be undone.',
+      'delete.willDo': 'Will do',
+      'delete.willRemove': 'Delete the session log, projection cache, and workspace references',
+      'delete.willStop': 'Stop the running session and its subagents',
+      'delete.willCascade': 'Also delete {count} subagent sessions',
+      'delete.checking': 'Checking session…',
+      'delete.children': 'Also delete {count} subagent sessions',
+      'delete.running': 'Session is still running; stop it and delete',
+      'delete.confirm': 'I confirm permanent deletion',
+      'delete.cancel': 'Cancel',
+      'delete.action': 'Delete permanently',
+      'delete.deleting': 'Deleting…',
+      'delete.done': 'Session deleted',
       'notice.grouped': 'Added to group',
       'notice.ungrouped': 'Removed from group',
       'notice.groupDissolved': 'Group dissolved',
@@ -433,6 +714,9 @@ window.__ModuleLoader__.load({
       'notice.copied': 'Session ID copied',
       'notice.copyFailed': 'Copy failed: {reason}',
       'notice.archiveFailed': 'Archive failed: {reason}',
+      'notice.archiveFollowupFailed': 'Archive follow-up failed: {reason}',
+      'notice.archiveFollowupSettled': 'Archive follow-up completed',
+      'notice.archiveFailedUnknown': 'unknown reason',
       'notice.pinFailed': 'Pin failed: {reason}',
       'notice.renameFailed': 'Rename failed: {reason}',
       'notice.forkFailed': 'Fork failed: {reason}',
@@ -452,6 +736,23 @@ window.__ModuleLoader__.load({
 
     const FALLBACK = ZH;
 
+    // DeepSeek official CNY prices per 1M tokens (deepseek-flash, 2026-11).
+    // Cache writes have no separate published rate; use the cache-miss input rate.
+    const DEFAULT_DEEPSEEK_PRICING = {
+      peak: { input: 2, cacheRead: 0.04, cacheWrite: 2, output: 8 },
+      offPeak: { input: 1, cacheRead: 0.02, cacheWrite: 1, output: 4 },
+      currency: 'CNY',
+    };
+
+    function defaultDeepSeekPricing() {
+      return {
+        peak: { ...DEFAULT_DEEPSEEK_PRICING.peak },
+        offPeak: { ...DEFAULT_DEEPSEEK_PRICING.offPeak },
+        currency: 'CNY',
+      };
+    }
+
+
     /* ── small helpers ─────────────────────────────────────────────── */
 
     function interpolate(text, params) {
@@ -467,12 +768,18 @@ window.__ModuleLoader__.load({
     }
 
     function loadPrefs() {
-      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, childOrders: {}, groupOrders: {}, hideArchived: true, workspaceTree: false, flatList: false };
+      const empty = { groups: {}, collapsedWorkspaces: {}, manualOrders: {}, topOrders: {}, childOrders: {}, groupOrders: {}, hideArchived: true, workspaceTree: false, flatList: false, runningLight: true, pricing: defaultDeepSeekPricing() };
       try {
         const raw = window.localStorage.getItem(STORAGE_KEY);
-        if (!raw) return empty;
+        if (!raw) {
+          runningLightPreference = true;
+          return empty;
+        }
         const parsed = JSON.parse(raw);
-        if (!parsed || typeof parsed !== 'object') return empty;
+        if (!parsed || typeof parsed !== 'object') {
+          runningLightPreference = true;
+          return empty;
+        }
         const groups = {};
         if (parsed.groups && typeof parsed.groups === 'object') {
           for (const [workspaceId, list] of Object.entries(parsed.groups)) {
@@ -544,7 +851,50 @@ window.__ModuleLoader__.load({
             if (clean.length > 0) groupOrders[groupId] = clean;
           }
         }
-        return {
+        const parseRates = (raw) => {
+          const rates = {};
+          if (!raw || typeof raw !== 'object') return rates;
+          for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
+            const value = Number(raw[key]);
+            if (Number.isFinite(value) && value >= 0) rates[key] = value;
+          }
+          return rates;
+        };
+        let pricing = defaultDeepSeekPricing();
+        let pricingTouched = false;
+        if (parsed.pricing && typeof parsed.pricing === 'object') {
+          pricingTouched = parsed.pricing.touched === true;
+          if (parsed.pricing.peak || parsed.pricing.offPeak) {
+            pricing = {
+              peak: parseRates(parsed.pricing.peak),
+              offPeak: parseRates(parsed.pricing.offPeak),
+            };
+          } else {
+            // v0.6 flat prices: keep the same amount in both periods.
+            const legacy = parseRates(parsed.pricing);
+            pricing = { peak: { ...legacy }, offPeak: { ...legacy } };
+            if (Object.keys(legacy).length > 0) pricingTouched = true;
+          }
+          if (Array.isArray(parsed.pricing.holidays)) {
+            const holidays = [...new Set(parsed.pricing.holidays.filter((day) => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)))];
+            if (holidays.length > 0) pricing.holidays = holidays;
+          }
+          if (parsed.pricing.currency !== 'CNY') {
+            // v0.7 stored USD prices without a currency marker. Convert them
+            // to the official CNY price scale at the published 2026-11 ratio.
+            const usdToCny = 6.6667;
+            const convert = (rates) => Object.fromEntries(
+              Object.entries(rates).map(([key, value]) => [key, Math.round(Number(value) * usdToCny * 1e6) / 1e6]),
+            );
+            pricing.peak = convert(pricing.peak);
+            pricing.offPeak = convert(pricing.offPeak);
+          }
+          const hasRates = Object.keys(pricing.peak).length > 0 || Object.keys(pricing.offPeak).length > 0;
+          if (!hasRates && !pricingTouched) pricing = defaultDeepSeekPricing();
+          pricing.currency = 'CNY';
+          if (pricingTouched) pricing.touched = true;
+        }
+        const prefs = {
           groups,
           collapsedWorkspaces,
           manualOrders,
@@ -554,17 +904,258 @@ window.__ModuleLoader__.load({
           hideArchived: parsed.hideArchived !== false,
           workspaceTree: parsed.workspaceTree === true && parsed.flatList !== true,
           flatList: parsed.flatList === true,
+          runningLight: parsed.runningLight !== false,
+          pricing,
         };
+        runningLightPreference = prefs.runningLight;
+        return prefs;
       } catch {
+        runningLightPreference = true;
         return empty;
       }
     }
 
     function savePrefs(prefs) {
+      runningLightPreference = prefs?.runningLight === true;
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
       } catch {
         /* view state is best-effort */
+      }
+    }
+
+    function setRunningLightPreference(enabled) {
+      const prefs = loadPrefs();
+      savePrefs({ ...prefs, runningLight: enabled === true });
+      try {
+        window.dispatchEvent(new Event(BRIDGE_EVENT));
+      } catch {
+        /* the view refreshes on next mount if the event is unavailable */
+      }
+    }
+
+    function projectionOf(list, sessionId, key) {
+      const values = list?.projectionsBySession?.[sessionId]?.values
+        ?? list?.byId?.[sessionId]?.projectionValues
+        ?? {};
+      return values[key];
+    }
+
+    function usageSummary(usage) {
+      const input = Number(usage?.uncachedInputTokens ?? usage?.inputTokens ?? 0) || 0;
+      const cacheRead = Number(usage?.cacheReadTokens ?? 0) || 0;
+      const cacheWrite = Number(usage?.cacheWriteTokens ?? 0) || 0;
+      const output = Number(usage?.outputTokens ?? 0) || 0;
+      const reasoning = Number(usage?.reasoningTokens ?? 0) || 0;
+      const total = input + cacheRead + cacheWrite + output;
+      const cacheBase = input + cacheRead + cacheWrite;
+      return {
+        input,
+        cacheRead,
+        cacheWrite,
+        output,
+        reasoning,
+        total,
+        cacheRate: cacheBase > 0 ? cacheRead / cacheBase : 0,
+      };
+    }
+
+    function periodUsage(bucket) {
+      return usageSummary({
+        uncachedInputTokens: bucket?.input,
+        cacheReadTokens: bucket?.cacheRead,
+        cacheWriteTokens: bucket?.cacheWrite,
+        outputTokens: bucket?.output,
+      });
+    }
+
+    function rateConfigured(rate) {
+      return Boolean(rate && Number.isFinite(rate.input) && Number.isFinite(rate.output));
+    }
+
+    function pricingConfigured(pricing) {
+      return rateConfigured(pricing?.peak) || rateConfigured(pricing?.offPeak);
+    }
+
+    function costOfUsage(usage, rates) {
+      if (!rateConfigured(rates)) return null;
+      const inputPrice = Number(rates.input) || 0;
+      const cacheReadPrice = Number(rates.cacheRead) || 0;
+      const cacheWritePrice = Number(rates.cacheWrite) || 0;
+      const outputPrice = Number(rates.output) || 0;
+      return (
+        usage.input / 1e6 * inputPrice
+        + usage.cacheRead / 1e6 * cacheReadPrice
+        + usage.cacheWrite / 1e6 * cacheWritePrice
+        + usage.output / 1e6 * outputPrice
+      );
+    }
+
+    function deepSeekPeakAt(time, holidays = []) {
+      const local = new Date((Number(time) || Date.now()) + 8 * 60 * 60 * 1000);
+      const day = local.getUTCDay();
+      const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
+      const dateKey = `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}-${String(local.getUTCDate()).padStart(2, '0')}`;
+      if (day === 0 || day === 6 || holidays.includes(dateKey)) return false;
+      return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
+    }
+
+    function costOfPeriods(periods, pricing) {
+      let total = 0;
+      let any = false;
+      for (const [key, rates] of [['peak', pricing?.peak], ['offPeak', pricing?.offPeak]]) {
+        const usage = periods?.[key];
+        if (!usage || usage.total <= 0) continue;
+        const cost = costOfUsage(usage, rates);
+        if (cost === null) return null;
+        total += cost;
+        any = true;
+      }
+      return any ? total : (pricingConfigured(pricing) ? 0 : null);
+    }
+
+    function formatCompactNumber(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      if (n >= 1e9) return `${(n / 1e9).toFixed(1).replace(/\.0$/, '')}B`;
+      if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+      if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
+      return String(Math.round(n));
+    }
+
+    function formatCost(value) {
+      if (value === null || !Number.isFinite(value)) return '—';
+      if (value > 0 && value < 0.0001) return '~<¥0.0001';
+      return `~¥${value.toFixed(value < 0.01 ? 4 : 2)}`;
+    }
+
+    function contextRateOf(pressure) {
+      const used = Number(pressure?.pressureTokens ?? pressure?.projectedTokens);
+      const window = Number(pressure?.contextWindow);
+      if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return null;
+      return { used, window, rate: Math.max(0, Math.min(1, used / window)) };
+    }
+
+    async function resolveBridgeAuth() {
+      const injected = window[BRIDGE_GLOBAL];
+      const path = injected && typeof injected.path === 'string' ? injected.path : BRIDGE_PATH;
+      try {
+        const response = await fetch(`${path}/config`, { cache: 'no-store' });
+        if (response.ok) {
+          const config = await response.json();
+          if (config && typeof config.token === 'string' && typeof config.path === 'string') {
+            return { path: config.path, token: config.token };
+          }
+        }
+      } catch {
+        /* fall back to the boot-time token; the Host may predate /config */
+      }
+      return injected && typeof injected.token === 'string' ? injected : null;
+    }
+
+    async function fetchLiveSessionData(sessionIds, force = false, holidays = []) {
+      const result = new Map();
+      const ids = [...new Set((sessionIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))];
+      if (ids.length === 0) return { rows: result, bridge: true, failed: false };
+      const holidayKey = [...new Set((holidays ?? []).filter((day) => typeof day === 'string'))].sort().join(',');
+      const bridge = await resolveBridgeAuth();
+      if (!bridge) return { rows: result, bridge: false, failed: true };
+      let failed = false;
+      const now = Date.now();
+      const missing = ids.filter((id) => {
+        const cached = liveDataCache.get(id);
+        return force || !cached || cached.holidayKey !== holidayKey || now - cached.at > LIVE_DATA_TTL_MS;
+      });
+      for (const chunkStart of Array.from({ length: Math.ceil(missing.length / 100) }, (_, i) => i * 100)) {
+        const chunk = missing.slice(chunkStart, chunkStart + 100);
+        try {
+          const response = await fetch(`${bridge.path}/data`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              [BRIDGE_TOKEN_HEADER]: bridge.token,
+            },
+            body: JSON.stringify({ sessionIds: chunk, holidays }),
+          });
+          if (!response.ok) {
+            failed = true;
+            for (const id of chunk) {
+              liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false, error: 'Host 数据接口返回错误' } });
+            }
+            continue;
+          }
+          const payload = await response.json();
+          const rows = Array.isArray(payload?.sessions) ? payload.sessions : [];
+          const seen = new Set();
+          for (const row of rows) {
+            if (!row || typeof row.id !== 'string') continue;
+            seen.add(row.id);
+            liveDataCache.set(row.id, { at: Date.now(), holidayKey, data: row });
+          }
+          for (const id of chunk) {
+            if (!seen.has(id)) liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false } });
+          }
+        } catch {
+          failed = true;
+          for (const id of chunk) {
+            liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false, error: 'Host 数据请求失败' } });
+          }
+        }
+      }
+      for (const id of ids) {
+        const cached = liveDataCache.get(id);
+        if (cached) result.set(id, cached.data);
+      }
+      return { rows: result, bridge: true, failed };
+    }
+
+    async function requestSessionDelete(payload) {
+      const auth = await resolveBridgeAuth();
+      if (!auth) throw new Error('会话分组插件 Host bridge 未加载；请完整重启 DSH');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      let response;
+      try {
+        response = await fetch(`${auth.path}/delete`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            [BRIDGE_TOKEN_HEADER]: auth.token,
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error && error.name === 'AbortError') throw new Error('Host 响应超时，请刷新页面后重试');
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+      const result = await response.json().catch(() => ({}));
+      if (!result || result.ok !== true) {
+        const error = new Error(result?.error || '删除失败');
+        error.code = result?.code;
+        error.details = result?.details;
+        throw error;
+      }
+      return result;
+    }
+
+    function mergeTools(target, tools) {
+      for (const tool of tools ?? []) {
+        if (!tool || typeof tool.name !== 'string' || !tool.name) continue;
+        const current = target.get(tool.name) ?? {
+          name: tool.name,
+          available: false,
+          calls: 0,
+          errors: 0,
+          sessions: 0,
+        };
+        current.available = current.available || tool.available === true;
+        current.calls += Number(tool.calls) || 0;
+        current.errors += Number(tool.errors) || 0;
+        current.sessions += 1;
+        target.set(tool.name, current);
       }
     }
 
@@ -630,6 +1221,151 @@ window.__ModuleLoader__.load({
 
     const MODE_KEY = 'dsh.session-groups.view';
     const UNGROUPED_KEY = '__ungrouped__';
+
+    /* ── scheduled tasks ─────────────────────────────────────────── */
+
+    const EMPTY_SCHEDULE_SNAPSHOT = Object.freeze({ records: [], settled: false, error: false });
+    const noScheduleSubscribe = () => () => {};
+    const getEmptyScheduleSnapshot = () => EMPTY_SCHEDULE_SNAPSHOT;
+
+    function scheduleTaskSessionId(task) {
+      if (!task || !task.target) return undefined;
+      if (task.target.kind === 'session') return task.target.sessionId;
+      if (task.target.kind === 'new_once') return task.target.sessionId;
+      return task.lastDelivery?.targetSessionId;
+    }
+
+    function scheduleTaskInvolves(task, sessionId) {
+      if (!task || task.status !== 'active') return false;
+      if (Array.isArray(task.involvedSessionIds) && task.involvedSessionIds.includes(sessionId)) return true;
+      return scheduleTaskSessionId(task) === sessionId;
+    }
+
+    function scheduleFrequencyText(task, t) {
+      const rule = typeof task?.rrule === 'string' ? task.rrule : '';
+      if (/FREQ=MINUTELY/.test(rule)) return t('schedule.freq.minutely');
+      if (/FREQ=HOURLY/.test(rule)) return t('schedule.freq.hourly');
+      if (/FREQ=DAILY/.test(rule)) return t('schedule.freq.daily');
+      if (/FREQ=WEEKLY/.test(rule)) return t('schedule.freq.weekly');
+      if (/FREQ=MONTHLY/.test(rule)) return t('schedule.freq.monthly');
+      return t('schedule.freq.custom');
+    }
+
+    function scheduleNextRun(task) {
+      const floor = task?.deliveryFloorEndsAt;
+      const scheduled = task?.scheduledAt;
+      if (typeof floor === 'string' && typeof scheduled === 'string'
+        && Date.parse(floor) > Date.parse(scheduled)) return floor;
+      return scheduled;
+    }
+
+    function scheduleRelativeText(timestamp, now, t) {
+      const diff = timestamp - now;
+      if (diff <= 0) return relativeTime(timestamp, now, t);
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 1) return t('schedule.relative.soon');
+      if (minutes < 60) return t('schedule.relative.minutes', { n: minutes });
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return t('schedule.relative.hours', { n: hours });
+      return t('schedule.relative.days', { n: Math.floor(hours / 24) });
+    }
+
+    function scheduleTimeText(task, now, t) {
+      const raw = scheduleNextRun(task);
+      const timestamp = typeof raw === 'string' ? Date.parse(raw) : NaN;
+      if (!Number.isFinite(timestamp)) return scheduleFrequencyText(task, t);
+      let absolute;
+      try {
+        absolute = new Intl.DateTimeFormat(undefined, {
+          month: 'numeric',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(new Date(timestamp));
+      } catch {
+        absolute = new Date(timestamp).toLocaleString();
+      }
+      return `${scheduleFrequencyText(task, t)} · ${absolute}${t('schedule.separator')}${scheduleRelativeText(timestamp, now, t)}`;
+    }
+
+    /**
+     * Follow the Host schedule catalog only when the Remote services are
+     * available. The Sidebar owns this one read so rows do not each query.
+     */
+    function createScheduleCatalogSource(ctx) {
+      let snapshot = EMPTY_SCHEDULE_SNAPSHOT;
+      const listeners = new Set();
+      let disposed = false;
+      let inFlight = false;
+      const getRemote = () => {
+        try {
+          if (ctx && ctx.remote) return ctx.remote;
+          return typeof ctx?.get === 'function' ? ctx.get('remote') : undefined;
+        } catch {
+          return undefined;
+        }
+      };
+      const publish = (next) => {
+        snapshot = next;
+        for (const listener of [...listeners]) {
+          try { listener(); } catch { /* a stale row must not break the catalog */ }
+        }
+      };
+      const refresh = async () => {
+        if (disposed || inFlight) return;
+        const remote = getRemote();
+        const schedule = remote && remote.schedule;
+        if (!schedule || typeof schedule.catalog !== 'function') {
+          publish({ records: [], settled: true, error: false });
+          return;
+        }
+        inFlight = true;
+        try {
+          const result = await schedule.catalog();
+          if (disposed) return;
+          if (result && result.ok === true) {
+            publish({ records: Array.isArray(result.value) ? result.value : [], settled: true, error: false });
+          } else {
+            publish({ ...snapshot, error: true });
+          }
+        } catch {
+          if (!disposed) publish({ ...snapshot, error: true });
+        } finally {
+          inFlight = false;
+        }
+      };
+      const source = {
+        getSnapshot: () => snapshot,
+        subscribe: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+      };
+      const start = () => {
+        disposed = false;
+        refresh();
+        let offChanged = null;
+        let offReset = null;
+        const remote = getRemote();
+        try {
+          if (remote && typeof remote.$on === 'function') {
+            offChanged = remote.$on('schedule/changed', () => { void refresh(); });
+          }
+        } catch { /* schedule is optional */ }
+        try {
+          if (typeof ctx?.on === 'function') {
+            offReset = ctx.on('connection/reset', () => { void refresh(); });
+          }
+        } catch { /* connection reset is optional */ }
+        return () => {
+          disposed = true;
+          try { offChanged?.(); } catch { /* ignore */ }
+          try { offReset?.(); } catch { /* ignore */ }
+          listeners.clear();
+        };
+      };
+      return { ...source, start };
+    }
 
     function createViewModeStore() {
       let mode = false;
@@ -1426,6 +2162,75 @@ window.__ModuleLoader__.load({
       return t('time.days', { n: days });
     }
 
+
+    /* ── title marquee ─────────────────────────────────────────────── */
+
+    const MIN_TITLE_REVEAL_PX = 8;
+    const TITLE_MARQUEE_PX_PER_MS = 0.03;
+
+    function placeTitle(title, left, range) {
+      if (typeof title.scrollTo === 'function') title.scrollTo({ left, behavior: 'instant' });
+      else title.scrollLeft = left;
+      if (left > 0) title.dataset.scrolled = '';
+      else delete title.dataset.scrolled;
+      if (left < range) title.dataset.clipped = '';
+      else delete title.dataset.clipped;
+    }
+
+    function restTitle(title) {
+      if (typeof title.scrollTo === 'function') title.scrollTo({ left: 0, behavior: 'instant' });
+      else title.scrollLeft = 0;
+      delete title.dataset.scrolled;
+      delete title.dataset.clipped;
+      delete title.dataset.marquee;
+    }
+
+    function useTitleMarquee(titleRef) {
+      const frameRef = React.useRef(0);
+      const revealingRef = React.useRef(false);
+      React.useEffect(() => () => {
+        if (typeof window !== 'undefined') window.cancelAnimationFrame(frameRef.current);
+      }, []);
+      const enter = React.useCallback((event) => {
+        if (event && event.pointerType === 'touch') return;
+        const title = titleRef.current;
+        if (!title || revealingRef.current) return;
+        revealingRef.current = true;
+        title.dataset.marquee = '';
+        const range = title.scrollWidth - title.clientWidth;
+        if (range <= MIN_TITLE_REVEAL_PX) return;
+        if (typeof window === 'undefined') return;
+        let reduce = false;
+        try {
+          reduce = typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        } catch {
+          reduce = false;
+        }
+        if (reduce || typeof window.requestAnimationFrame !== 'function') {
+          placeTitle(title, range, range);
+          return;
+        }
+        window.cancelAnimationFrame(frameRef.current);
+        let previous;
+        let position = 0;
+        const step = (now) => {
+          position += previous === undefined ? 0 : (now - previous) * TITLE_MARQUEE_PX_PER_MS;
+          previous = now;
+          placeTitle(title, Math.min(position, range), range);
+          if (position < range) frameRef.current = window.requestAnimationFrame(step);
+        };
+        frameRef.current = window.requestAnimationFrame(step);
+      }, [titleRef]);
+      const leave = React.useCallback(() => {
+        revealingRef.current = false;
+        if (typeof window !== 'undefined') window.cancelAnimationFrame(frameRef.current);
+        const title = titleRef.current;
+        if (title) restTitle(title);
+      }, [titleRef]);
+      return React.useMemo(() => ({ enter, leave }), [enter, leave]);
+    }
+
     function errorMessage(error) {
       if (!error) return 'unknown';
       if (typeof error === 'string') return error;
@@ -1640,6 +2445,41 @@ window.__ModuleLoader__.load({
       h('rect', { key: 'a', x: '1.52075', y: '4.07373', width: '10.3932', height: '10.3932', rx: '2', stroke: 'currentColor' }),
       h('path', { key: 'b', d: 'M11.9792 1.53296C13.36 1.53296 14.4792 2.65225 14.4792 4.03296V9.42847C14.4792 10.3756 13.9521 11.1987 13.1755 11.6228V10.3298C13.3652 10.0787 13.4792 9.7674 13.4792 9.42847V4.03296C13.4792 3.20453 12.8077 2.53296 11.9792 2.53296H6.58374C6.27966 2.53301 5.99684 2.6235 5.7605 2.77905H4.42358C4.85652 2.03463 5.66056 1.53304 6.58374 1.53296H11.9792Z', fill: 'currentColor', stroke: 'none' }),
     ], props);
+    const IconData = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M2.25 2.25V13.75H13.75', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M5.25 10.5V7.5M8.25 10.5V4.75M11.25 10.5V6.25', stroke: 'currentColor' }),
+    ], props);
+    const IconGauge = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M2.2 12.5a5.8 5.8 0 1 1 11.6 0', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 12.5 10.4 8.1', stroke: 'currentColor' }),
+      h('circle', { key: 'c', cx: '8', cy: '12.5', r: '1', fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconDatabase = (props) => officialIcon([
+      h('ellipse', { key: 'a', cx: '8', cy: '3.7', rx: '5', ry: '2', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M3 3.7v4.2c0 1.1 2.2 2 5 2s5-.9 5-2V3.7', stroke: 'currentColor' }),
+      h('path', { key: 'c', d: 'M3 8v4.2c0 1.1 2.2 2 5 2s5-.9 5-2V8', stroke: 'currentColor' }),
+    ], props);
+    const IconContext = (props) => officialIcon([
+      h('circle', { key: 'a', cx: '8', cy: '8', r: '5.5', stroke: 'currentColor' }),
+      h('circle', { key: 'b', cx: '8', cy: '8', r: '2.3', stroke: 'currentColor' }),
+    ], props);
+    const IconStorage = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 4.5, width: 11, height: 7, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M4.5 8h5.5', stroke: 'currentColor' }),
+      h('circle', { key: 'c', cx: 12, cy: 8, r: 0.8, fill: 'currentColor', stroke: 'none' }),
+    ], props);
+    const IconModel = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 3.5, width: 11, height: 9, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M5 6.5h6M5 9.5h4', stroke: 'currentColor' }),
+    ], props);
+    const IconCoin = (props) => officialIcon([
+      h('circle', { key: 'a', cx: '8', cy: '8', r: '5.5', stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 4.6v6.8M10.1 6c-.4-.8-1.2-1.2-2.1-1.2-1.2 0-2 .6-2 1.4 0 .9.8 1.2 2 1.5 1.2.3 2.1.6 2.1 1.5 0 .8-.9 1.4-2.1 1.4-.9 0-1.7-.4-2.1-1.2', stroke: 'currentColor' }),
+    ], props);
+    const IconWrench = (props) => officialIcon([
+      h('path', { key: 'a', d: 'M9.6 2.5a3.5 3.5 0 0 0-4.2 4.2L2 10.1 3.9 12l3.4-3.4a3.5 3.5 0 0 0 4.2-4.2L9.4 6.5 7.5 4.6l2.1-2.1Z', stroke: 'currentColor' }),
+      h('circle', { key: 'b', cx: '3.2', cy: '12.8', r: '.7', fill: 'currentColor', stroke: 'none' }),
+    ], props);
     const IconUngroup = (props) => icon(
       [h('rect', { key: 'a', x: 4, y: 4, width: 7, height: 7, rx: 1.5 }),
         h('rect', { key: 'b', x: 13, y: 13, width: 7, height: 7, rx: 1.5 }),
@@ -1651,6 +2491,14 @@ window.__ModuleLoader__.load({
         h('rect', { key: 'b', x: 4, y: 14, width: 16, height: 6, rx: 2 })],
       props,
     );
+    const IconGroupAdd = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 3.5, width: 11, height: 9, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M8 6v4M6 8h4', stroke: 'currentColor' }),
+    ], props);
+    const IconGroupMove = (props) => officialIcon([
+      h('rect', { key: 'a', x: 2.5, y: 3.5, width: 11, height: 9, rx: 2, stroke: 'currentColor' }),
+      h('path', { key: 'b', d: 'M1 8h5M4 6l2 2-2 2', stroke: 'currentColor' }),
+    ], props);
 
     // 官方子代理图标（16×16，strokeWidth 1），路径取自 DSH primitives。
     const IconSubagentGroup = (props) => officialIcon([
@@ -1663,6 +2511,11 @@ window.__ModuleLoader__.load({
       h('path', { key: 'a', d: 'M8 8.25C9.51878 8.25 10.75 7.01878 10.75 5.5C10.75 3.98122 9.51878 2.75 8 2.75C6.48122 2.75 5.25 3.98122 5.25 5.5C5.25 7.01878 6.48122 8.25 8 8.25Z', stroke: 'currentColor' }),
       h('path', { key: 'b', d: 'M2.5 14.5C2.5 11.5 5.25 10.25 8 10.25C10.75 10.25 13.5 11.5 13.5 14.5', stroke: 'currentColor' }),
     ], props);
+    const IconClock = (props) => officialIcon([
+      h('circle', { key: 'c', cx: '8', cy: '8', r: '5.5', fill: 'none', stroke: 'currentColor' }),
+      h('path', { key: 'h', d: 'M8 4.75V8l2.2 1.35' }),
+    ], props);
+
 
     /* ── styles ────────────────────────────────────────────────────── */
 
@@ -1678,7 +2531,9 @@ window.__ModuleLoader__.load({
       .dsg-searchInput{flex:1;min-width:0;height:28px;box-sizing:border-box;padding:0 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;outline:none}
       .dsg-searchInput:focus{border-color:var(--dsw-alias-brand-primary)}
       .dsg-searchInput::placeholder{color:var(--dsw-alias-label-tertiary)}
-      .dsg-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:1px 2px 14px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent}
+      .dsg-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:1px 2px 14px;display:flex;flex-direction:column;gap:2px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2) transparent;animation:dsg-wide-in 200ms var(--ds-ease-in-out, ease-in-out)}
+      @keyframes dsg-wide-in{from{opacity:0}}
+      @media (prefers-reduced-motion:reduce){.dsg-scroll{animation:none}}
       .dsg-workspace{display:flex;flex-direction:column;gap:1px;margin-bottom:2px}
       .dsg-wsHeader{display:flex;align-items:center;gap:7px;height:34px;margin:0 2px 0 var(--dsg-ws-row-indent,0px);padding:0 4px 0 7px;border-radius:7px;cursor:pointer;color:var(--dsw-alias-label-primary);flex:none}
       .dsg-wsHeader:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -1712,6 +2567,7 @@ window.__ModuleLoader__.load({
       .dsg-groupChevron{width:14px;height:14px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);transition:transform .14s var(--ds-ease-in-out, ease)}
       .dsg-groupChevron.open{transform:rotate(90deg)}
       .dsg-groupDot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--dsg-group-color);box-shadow:0 0 0 2px color-mix(in srgb, var(--dsg-group-color) 22%, transparent)}
+      .dsg-groupSwatch{width:8px;height:8px;border-radius:2px;flex:none;background:var(--dsg-group-color)}
       .dsg-groupStatuses{display:inline-flex;align-items:center;gap:7px;flex:none;margin-right:1px}
       .dsg-groupStatusItem{display:inline-flex;align-items:center;gap:2px}
       .dsg-groupStatusCount{font-size:10.5px;line-height:14px;font-weight:500;color:var(--dsw-alias-label-secondary)}
@@ -1720,8 +2576,8 @@ window.__ModuleLoader__.load({
       .dsg-groupActions{display:inline-flex;align-items:center;gap:6px;flex:none;max-width:0;overflow:hidden;opacity:0;transition:max-width .14s var(--ds-ease-in-out, ease), opacity .14s var(--ds-ease-in-out, ease)}
       .dsg-groupHeader:hover .dsg-groupActions,.dsg-groupHeader:focus-within .dsg-groupActions{max-width:42px;opacity:1}
       .dsg-groupBody{display:flex;flex-direction:column;gap:1px;margin-left:6px;padding-left:0;border-left:2px solid var(--dsg-group-color)}
-      .dsg-groupHeader,.dsg-groupBody,.dsg-groupDot{--dsg-group-color:var(--dsg-group-color-light)}
-      body[data-ds-dark-theme] .dsg-groupHeader,body[data-ds-dark-theme] .dsg-groupBody,body[data-ds-dark-theme] .dsg-groupDot{--dsg-group-color:var(--dsg-group-color-dark,var(--dsg-group-color-light))}
+      .dsg-groupHeader,.dsg-groupBody,.dsg-groupDot,.dsg-groupSwatch{--dsg-group-color:var(--dsg-group-color-light)}
+      body[data-ds-dark-theme] .dsg-groupHeader,body[data-ds-dark-theme] .dsg-groupBody,body[data-ds-dark-theme] .dsg-groupDot,body[data-ds-dark-theme] .dsg-groupSwatch{--dsg-group-color:var(--dsg-group-color-dark,var(--dsg-group-color-light))}
       body[data-ds-dark-theme] .dsg-groupHeader{background:color-mix(in srgb, var(--dsg-group-color) 20%, transparent)}
       body[data-ds-dark-theme] .dsg-groupHeader:hover{background:color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
       body[data-ds-dark-theme] .dsg-groupDot{box-shadow:0 0 0 2px color-mix(in srgb, var(--dsg-group-color) 30%, transparent)}
@@ -1735,12 +2591,14 @@ window.__ModuleLoader__.load({
       .dsg-sessionOverflow:hover{color:var(--dsw-alias-label-secondary)}
       .dsg-wsBody>.dsg-sessionOverflow{margin:0 2px 0 calc(24px + var(--dsg-ws-indent,0px));padding-left:10px}
       .dsg-statusSlot{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:flex-start}
+      .dsg-leadingSlot{width:16px;height:20px;justify-content:center;gap:0}
       .dsg-stateDot{position:relative;display:inline-block;flex:none}
       .dsg-stateDot:after{content:"";position:absolute;inset:20%;border-radius:50%;background:currentColor}
       .dsg-stateDot[data-state=done]{color:var(--dsw-alias-state-success-primary)}
       .dsg-stateDot[data-state=warning]{color:var(--dsw-alias-state-warn-primary)}
       .dsg-stateDot[data-state=error]{color:var(--dsw-alias-state-error-primary)}
       .dsg-stateDot[data-state=idle]{color:var(--dsw-alias-state-idle-primary)}
+      .dsg-stateDot[data-state=running-light]{color:var(--dsw-alias-state-business-primary)}
       .dsg-stateSpinner{flex:none;color:var(--dsw-alias-label-tertiary)}
       .dsg-stateSpinnerMotion{transform-origin:center;animation:dsg-state-dot-spin 1.5s linear infinite}
       .dsg-stateSpinnerTrack,.dsg-stateSpinnerArc{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
@@ -1775,9 +2633,27 @@ window.__ModuleLoader__.load({
       .dsg-subagentTitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .dsg-sessionRow.archived .dsg-titleText{color:var(--dsw-alias-label-caption)}
       .dsg-titleText{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px;line-height:20px;letter-spacing:.005em}
+      .dsg-titleText[data-marquee]{text-overflow:clip}
+      .dsg-titleText[data-scrolled]{mask-image:linear-gradient(to right,transparent,#000 12px)}
+      .dsg-titleText[data-clipped]{mask-image:linear-gradient(to left,transparent,#000 12px)}
+      .dsg-titleText[data-scrolled][data-clipped]{mask-image:linear-gradient(to right,transparent,#000 12px,#000 calc(100% - 12px),transparent)}
       .dsg-time{flex:none;margin-left:2px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px;white-space:nowrap}
       .dsg-rowMore{width:22px;height:22px;flex:none;display:none;align-items:center;justify-content:center;padding:0;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
       .dsg-sessionRow:hover .dsg-rowMore,.dsg-sessionRow:focus-within .dsg-rowMore{display:inline-flex}
+      @media (hover:none){.dsg-sessionRow .dsg-rowMore{display:inline-flex}.dsg-sessionRow .dsg-rowAction{display:none}}
+      .dsg-hoverCard{position:fixed;z-index:75;box-sizing:border-box;padding:12px 16px;border-radius:var(--dsw-radius-lg,12px);background:#2c2c2e;box-shadow:var(--dsw-shadow-lv3,0 8px 28px rgb(0 0 0 / .28));color:var(--dsw-alias-hovercard-label-primary,#fff);display:flex;flex-direction:column;gap:8px;pointer-events:auto}
+      .dsg-hoverTitle{font-size:14px;line-height:20px;font-weight:400;color:var(--dsw-alias-hovercard-label-primary,#fff);overflow-wrap:break-word}
+      .dsg-hoverPath{color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72));font-size:12px;line-height:16px;overflow-wrap:anywhere;word-break:break-all}
+      .dsg-hoverTime{color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72));font-size:12px;line-height:16px}
+      .dsg-hoverStatus{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-hovercard-label-tertiary,rgb(255 255 255 / .52));font-size:12px;line-height:20px}
+      .dsg-hoverArchived{color:var(--dsw-alias-hovercard-label-tertiary,rgb(255 255 255 / .52))}
+      .dsg-hoverTasks{display:flex;flex-direction:column;gap:8px}
+      .dsg-hoverTask{display:flex;align-items:flex-start;gap:8px;min-width:0}
+      .dsg-hoverTaskIcon{flex:none;display:inline-flex;align-items:center;height:16px;color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72))}
+      .dsg-hoverTaskBody{display:flex;flex-direction:column;gap:2px;min-width:0}
+      .dsg-hoverTaskName{font-size:12px;line-height:16px;color:var(--dsw-alias-hovercard-label-primary,#fff);overflow-wrap:anywhere}
+      .dsg-hoverTaskTime{font-size:12px;line-height:16px;color:var(--dsw-alias-hovercard-label-secondary,rgb(255 255 255 / .72));overflow-wrap:anywhere}
+      .dsg-hoverTaskMore{font-size:12px;line-height:16px;color:var(--dsw-alias-hovercard-label-tertiary,rgb(255 255 255 / .52))}
       .dsg-rowMore:hover{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
       .dsg-ungroupedZone{display:flex;flex-direction:column;gap:1px;min-height:4px;border-radius:7px;margin-top:1px;padding:0}
       .dsg-ungroupedZone>.dsg-sessionRow{margin:0 2px 0 24px;padding-left:10px}
@@ -1851,12 +2727,18 @@ window.__ModuleLoader__.load({
       .dsg-menuItem:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
       .dsg-menuItem.danger{color:var(--dsw-alias-state-error-primary)}
       .dsg-menuItem.danger .dsg-menuIcon{color:var(--dsw-alias-state-error-primary)}
+      .dsg-menuItem.disabled{opacity:.45;cursor:default}
+      .dsg-submenuTrigger .dsg-submenuChevron{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:15px;line-height:18px;flex:none}
+      .dsg-submenuTrigger.open{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-submenu{position:fixed;z-index:95;min-width:190px;max-width:280px;max-height:300px;overflow-y:auto;padding:4px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 28px rgb(0 0 0 / .22);color:var(--dsw-alias-label-primary);scrollbar-width:thin}
       .dsg-menuItem.danger:hover,.dsg-menuItem.danger:focus-visible{background:var(--dsw-alias-interactive-bg-hover-danger)}
       .dsg-menuIcon{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary)}
       .dsg-menuLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
       .dsg-menuCheck{flex:none;margin-left:12px;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-primary)}
       .dsg-menuShortcut{flex:none;margin-left:12px;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:14px;white-space:nowrap}
       .dsg-rowAction{width:22px;height:22px;flex:none;display:none;align-items:center;justify-content:center;padding:0;border:none;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+      .dsg-rowTrailing,.dsg-leadingSlot,.dsg-rowExternalActions{display:inline-flex;align-items:center;gap:4px;flex:none;color:var(--dsw-alias-label-tertiary)}
+      .dsg-leadingSlot:empty,.dsg-rowExternalActions:empty{display:none}
       .dsg-sessionRow:hover .dsg-rowAction,.dsg-sessionRow:focus-within .dsg-rowAction{display:inline-flex}
       .dsg-rowAction:hover{background:var(--dsw-alias-interactive-bg-active);color:var(--dsw-alias-label-primary)}
       .dsg-sessionRow:hover .dsg-time,.dsg-sessionRow:focus-within .dsg-time{display:none}
@@ -1892,19 +2774,161 @@ window.__ModuleLoader__.load({
       .dsg-rgbAction.primary:hover{filter:brightness(1.06)}
       .dsg-rgbError{flex-basis:100%;color:var(--dsw-alias-state-error-primary);font-size:10.5px;line-height:14px;padding-left:24px}
       .dsg-swatch.selected{border-color:var(--dsw-alias-label-primary);box-shadow:0 0 0 1px var(--dsw-alias-bg-overlay)}
-      .dsg-swatch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-settingsPage{display:flex;flex-direction:column;gap:0;width:100%;max-width:760px;padding:4px 0 16px}
+      .dsg-settingsTitle{margin:0 0 6px;color:var(--dsw-alias-label-primary);font-size:16px;line-height:24px;font-weight:600}
+      .dsg-settingsIntro{margin:0 0 8px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+      .dsg-settingsRow{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:16px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-settingsMain{display:flex;flex-direction:column;gap:4px;min-width:0}
+      .dsg-settingsLabelRow{display:flex;align-items:center;gap:8px;min-width:0}
+      .dsg-settingsPreviewStatus{width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+      .dsg-settingsLabel{color:var(--dsw-alias-label-primary);font-size:14px;line-height:22px}
+      .dsg-settingsHint{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;max-width:560px}
+      .dsg-switch{position:relative;width:36px;height:20px;flex:none;box-sizing:border-box;margin-top:1px;padding:0;border:none;border-radius:999px;background:var(--dsw-alias-border-l2);cursor:pointer;transition:background .15s ease}
+      .dsg-switch[aria-checked=true]{background:var(--dsw-alias-state-business-primary)}
+      .dsg-switch:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+      .dsg-switchThumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-bg-layer-1);box-shadow:0 1px 2px rgb(0 0 0 / .18);transition:transform .15s ease}
+      .dsg-switch[aria-checked=true] .dsg-switchThumb{transform:translateX(16px)}
+      .dsg-settingsPage .dsg-stateSpinner{color:var(--dsw-alias-label-tertiary)}
+      .dsg-priceModes{display:flex;gap:3px;width:fit-content;margin-top:9px;padding:2px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-2)}
+      .dsg-priceMode{height:23px;padding:0 9px;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10.5px;line-height:23px;cursor:pointer;white-space:nowrap}
+      .dsg-priceMode:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-priceMode.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+      .dsg-priceMode:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-priceGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:100%;margin-top:10px}
+      .dsg-priceSave{align-self:flex-start;margin-top:9px;padding:5px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:5px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-secondary);font:inherit;font-size:10.5px;line-height:16px;cursor:pointer}
+      .dsg-priceSave:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-holidayField{display:flex;align-items:center;gap:8px;width:100%;margin-top:9px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-holidayField .dsg-priceInput{flex:1;min-width:0}
+      .dsg-priceField{display:flex;flex-direction:column;gap:4px;min-width:0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-priceInput{width:100%;height:30px;box-sizing:border-box;padding:0 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;outline:none}
+      .dsg-priceInput:focus{border-color:var(--dsw-alias-state-business-primary)}
+      .dsg-deleteOverlay{position:fixed;inset:0;z-index:110;display:flex;align-items:center;justify-content:center;padding:24px;background:rgb(0 0 0 / .28)}
+      .dsg-deletePanel{width:min(430px,100%);box-sizing:border-box;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 50px rgb(0 0 0 / .28)}
+      .dsg-deleteTitle{font-size:15px;line-height:22px;font-weight:600}
+      .dsg-deleteTarget{margin-top:4px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+      .dsg-deleteWarning{margin:12px 0 10px;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}
+      .dsg-deleteMuted{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px;margin-bottom:8px}
+      .dsg-deleteOperations{margin:10px 0 4px;padding:9px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;background:var(--dsw-alias-bg-layer-2)}
+      .dsg-deleteOperationsTitle{color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600;margin-bottom:4px}
+      .dsg-deleteOperation{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px}
+      .dsg-deleteOption{display:flex;align-items:flex-start;gap:8px;padding:6px 0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;cursor:pointer}
+      .dsg-deleteOption input{margin:3px 0 0;accent-color:var(--dsw-alias-state-error-primary)}
+      .dsg-deleteError{margin-top:8px;color:var(--dsw-alias-state-error-primary);font-size:11px;line-height:17px;overflow-wrap:anywhere}
+      .dsg-deleteSafety{margin:9px 0 4px;padding:7px 9px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;font-size:11px;line-height:17px}
+      .dsg-deleteSafety.ok{color:var(--dsw-alias-state-success-primary);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 7%,transparent)}
+      .dsg-deleteSafety.fail{color:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,transparent)}
+      .dsg-deleteSafetyTitle{font-weight:600}
+      .dsg-deleteSafetyList{margin-top:3px;color:var(--dsw-alias-label-secondary);font-size:10.5px;line-height:16px}
+      .dsg-deleteActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+      .dsg-deleteButton{height:30px;padding:0 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;cursor:pointer}
+      .dsg-deleteButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-deleteButton.danger{border-color:transparent;background:var(--dsw-alias-state-error-primary);color:#fff}
+      .dsg-deleteButton.danger:hover:not(:disabled){filter:brightness(1.06);background:var(--dsw-alias-state-error-primary)}
+      .dsg-deleteButton:disabled{opacity:.45;cursor:default}
+      .dsg-deleteButton:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-dataOverlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;background:rgb(0 0 0 / .22)}
+      .dsg-dataPanel{display:flex;flex-direction:column;width:min(540px,100%);max-height:min(760px,calc(100vh - 48px));overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 50px rgb(0 0 0 / .24)}
+      .dsg-statList{display:flex;flex-direction:column}
+      .dsg-statRow{border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-statRow:first-child{border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-statHeader{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;padding:10px 2px;border:none;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+      .dsg-statHeader:hover{background:var(--dsw-alias-interactive-bg-hover)}
+      .dsg-statHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;border-radius:5px}
+      .dsg-statIcon{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary)}
+      .dsg-statIcon svg{width:14px;height:14px}
+      .dsg-statLabel{width:58px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px;white-space:nowrap}
+      .dsg-statAgg{flex:none;margin-left:-5px;padding:0 4px;border:1px solid var(--dsw-alias-border-l1);border-radius:3px;color:var(--dsw-alias-label-tertiary);font-size:9px;line-height:14px;white-space:nowrap}
+      .dsg-statValue{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .dsg-statChevron{width:12px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;text-align:center}
+      .dsg-statBody{padding:0 2px 10px 74px}
+      .dsg-statBar{display:flex;width:100%;height:5px;gap:1px;margin:2px 0 9px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}
+      .dsg-statSegment{min-width:2px;height:100%;flex:none;border-radius:1px}
+      .dsg-segInput{background:var(--dsw-static-blue-450,#4d6bfe)}
+      .dsg-segCacheRead{background:var(--dsw-static-neutral-bluish-400,#94a3b8)}
+      .dsg-segCacheWrite{background:#a78bfa}
+      .dsg-segOutput{background:var(--dsw-alias-state-success-primary)}
+      .dsg-segSystem{background:var(--dsw-static-neutral-bluish-400,#94a3b8)}
+      .dsg-segTools{background:#a78bfa}
+      .dsg-segMessages{background:var(--dsw-static-blue-450,#4d6bfe)}
+      .dsg-segRemaining{background:var(--dsw-alias-border-l2)}
+      .dsg-segPeak{background:var(--dsw-alias-state-warn-primary)}
+      .dsg-segOffPeak{background:var(--dsw-alias-state-success-primary)}
+      .dsg-segModel0{background:#4d6bfe}
+      .dsg-segModel1{background:#a78bfa}
+      .dsg-segModel2{background:#2fa24c}
+      .dsg-segModel3{background:#e0a23f}
+      .dsg-segModel4{background:#e06c9f}
+      .dsg-statDetails{display:flex;flex-direction:column;margin:6px 0 0;padding:0}
+      .dsg-statDetail{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-statDetail:last-child{border-bottom:none}
+      .dsg-statDetail dt{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-statDetailLabel{display:inline-flex;align-items:center;gap:6px}
+      .dsg-statSwatch{display:inline-block;width:8px;height:8px;flex:none;border-radius:2px}
+      .dsg-statDetail dd{margin:0;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;text-align:right}
+      .dsg-contextRing{flex:none;overflow:visible}
+      .dsg-contextRingTrack{fill:none;stroke:var(--dsw-alias-border-l3);stroke-width:2px}
+      .dsg-contextRingFill{fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:2px;stroke-linecap:round}
+      @media(max-width:520px){.dsg-statLabel{width:46px}.dsg-statBody{padding-left:78px}.dsg-dataPanel{width:100%}}
+
+      .dsg-dataHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 18px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataHeading{min-width:0}
+      .dsg-dataTitle{font-size:15px;line-height:22px;font-weight:600;overflow-wrap:anywhere}
+      .dsg-dataMeta{margin-top:3px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;overflow-wrap:anywhere}
+      .dsg-dataHeaderActions{display:flex;align-items:center;gap:4px;flex:none}
+      .dsg-dataRefresh,.dsg-dataClose{width:26px;height:26px;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:26px;cursor:pointer}
+      .dsg-dataRefresh:hover,.dsg-dataClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+      .dsg-dataRefresh:disabled{opacity:.5;cursor:default}
+      .dsg-dataRefresh:focus-visible,.dsg-dataClose:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-dataBody{padding:14px 18px 6px;overflow:auto}
+      .dsg-dataCards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+      .dsg-dataCard{padding:9px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2);min-width:0}
+      .dsg-dataCardLabel{color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:15px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+      .dsg-dataCardValue{margin-top:3px;color:var(--dsw-alias-label-primary);font-size:16px;line-height:22px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+      .dsg-dataHint{margin:10px 0 0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px}
+      .dsg-dataSection{margin-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataSectionHeader{display:flex;align-items:center;gap:6px;width:100%;padding:9px 0 5px;border:none;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+      .dsg-dataSectionHeader:hover .dsg-dataSectionTitle{color:var(--dsw-alias-label-primary)}
+      .dsg-dataSectionHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;border-radius:4px}
+      .dsg-dataSectionChevron{width:12px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;text-align:center}
+      .dsg-dataSectionTitle{display:flex;align-items:baseline;gap:8px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-weight:600}
+      .dsg-dataSectionSub{color:var(--dsw-alias-label-tertiary);font-size:10.5px;font-weight:400}
+      .dsg-dataSectionBody{padding:0 0 9px 18px}
+      .dsg-dataCostHead,.dsg-dataCostRow{display:grid;grid-template-columns:1fr 62px 72px 64px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataCostHead{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px}
+      .dsg-dataCostLabel{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-dataCostTokens,.dsg-dataCostPrice,.dsg-dataCostAmount{text-align:right;color:var(--dsw-alias-label-secondary);font-size:10.5px;line-height:16px;font-variant-numeric:tabular-nums}
+      .dsg-dataCostTotal{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:6px;color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600}
+      .dsg-dataCostPeriod{margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataCostPeriodTitle{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600;margin-bottom:3px}
+      .dsg-dataToolModes{display:flex;align-items:center;gap:3px;margin:1px 0 5px;padding:2px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-2);width:fit-content}
+      .dsg-dataToolMode{height:22px;padding:0 8px;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10.5px;line-height:22px;cursor:pointer;white-space:nowrap}
+      .dsg-dataToolMode:hover{color:var(--dsw-alias-label-primary)}
+      .dsg-dataToolMode.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
+      .dsg-dataToolMode:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+      .dsg-dataBreakdown{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-top:7px}
+      .dsg-dataBreakdownRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataBreakdownLabel{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
+      .dsg-dataBreakdownValue{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
+      .dsg-dataTools{max-height:224px;overflow:auto;margin-top:4px;overscroll-behavior:contain;scrollbar-width:thin}
+      .dsg-dataToolRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+      .dsg-dataToolName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}
+      .dsg-dataToolMuted{color:var(--dsw-alias-label-tertiary)}
+      .dsg-dataToolStats{flex:none;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:16px;font-variant-numeric:tabular-nums}
+      .dsg-dataFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 18px;border-top:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:16px}
+      @media(max-width:520px){.dsg-dataCards,.dsg-dataBreakdown{grid-template-columns:1fr 1fr}.dsg-dataOverlay{padding:12px}.dsg-priceGrid{grid-template-columns:1fr 1fr}}
     `;
 
     /* ── shared small components ──────────────────────────────────── */
 
-    function MenuItem({ icon: menuIcon, label, danger, shortcut, checked, onClick }) {
+    function MenuItem({ icon: menuIcon, label, danger, shortcut, checked, disabled, onClick }) {
       return h(
         'button',
         {
           type: 'button',
           role: 'menuitem',
-          className: danger ? 'dsg-menuItem danger' : 'dsg-menuItem',
+          className: 'dsg-menuItem' + (danger ? ' danger' : '') + (disabled ? ' disabled' : ''),
           title: label,
+          disabled: disabled === true,
           onClick,
         },
         menuIcon ? h('span', { className: 'dsg-menuIcon' }, menuIcon) : null,
@@ -1912,6 +2936,101 @@ window.__ModuleLoader__.load({
         shortcut ? h('span', { className: 'dsg-menuShortcut' }, shortcut) : null,
         checked
           ? h('span', { className: 'dsg-menuCheck' }, h(IconCheck, { width: 14, height: 14 }))
+          : null,
+      );
+    }
+
+    function SubmenuItem({ icon: menuIcon, label, items, disabled }) {
+      const [open, setOpen] = React.useState(false);
+      const [position, setPosition] = React.useState(null);
+      const buttonRef = React.useRef(null);
+      const panelRef = React.useRef(null);
+
+      const place = () => {
+        const button = buttonRef.current;
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const width = 208;
+        const height = 300;
+        let left = rect.right + 4;
+        if (left + width > window.innerWidth - 8) left = Math.max(8, rect.left - width - 4);
+        const top = Math.max(8, Math.min(rect.top, window.innerHeight - height - 8));
+        setPosition({ left, top });
+      };
+
+      const toggle = () => {
+        if (disabled === true) return;
+        if (open) {
+          setOpen(false);
+          return;
+        }
+        place();
+        setOpen(true);
+      };
+
+      React.useEffect(() => {
+        if (!open) return undefined;
+        const onPointerDown = (event) => {
+          if (buttonRef.current?.contains(event.target)) return;
+          if (panelRef.current?.contains(event.target)) return;
+          setOpen(false);
+        };
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') setOpen(false);
+        };
+        document.addEventListener('pointerdown', onPointerDown, true);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown, true);
+          document.removeEventListener('keydown', onKeyDown);
+        };
+      }, [open]);
+
+      return h(
+        React.Fragment,
+        null,
+        h(
+          'button',
+          {
+            ref: buttonRef,
+            type: 'button',
+            role: 'menuitem',
+            className: 'dsg-menuItem dsg-submenuTrigger' + (open ? ' open' : '') + (disabled ? ' disabled' : ''),
+            'aria-haspopup': 'menu',
+            'aria-expanded': open,
+            disabled: disabled === true,
+            onClick: (event) => {
+              event.stopPropagation();
+              toggle();
+            },
+          },
+          menuIcon ? h('span', { className: 'dsg-menuIcon' }, menuIcon) : null,
+          h('span', { className: 'dsg-menuLabel' }, label),
+          h('span', { className: 'dsg-submenuChevron', 'aria-hidden': 'true' }, '›'),
+        ),
+        open && position
+          ? h(
+              'div',
+              {
+                ref: panelRef,
+                className: 'dsg-submenu',
+                role: 'menu',
+                style: { left: `${position.left}px`, top: `${position.top}px` },
+                onMouseDown: (event) => event.stopPropagation(),
+              },
+              items.map((item) => h(MenuItem, {
+                key: item.key,
+                icon: item.icon,
+                label: item.label,
+                checked: item.checked,
+                danger: item.danger,
+                disabled: item.disabled,
+                onClick: () => {
+                  setOpen(false);
+                  item.onClick();
+                },
+              })),
+            )
           : null,
       );
     }
@@ -1926,14 +3045,19 @@ window.__ModuleLoader__.load({
         const keyDown = (event) => {
           if (event.key === 'Escape') onClose();
         };
+        const closeOnScroll = (event) => {
+          const target = event.target;
+          if (target && typeof target.closest === 'function' && target.closest('.dsg-titleText')) return;
+          onClose();
+        };
         document.addEventListener('pointerdown', close, true);
         document.addEventListener('keydown', keyDown, true);
-        window.addEventListener('scroll', onClose, true);
+        window.addEventListener('scroll', closeOnScroll, true);
         window.addEventListener('resize', onClose);
         return () => {
           document.removeEventListener('pointerdown', close, true);
           document.removeEventListener('keydown', keyDown, true);
-          window.removeEventListener('scroll', onClose, true);
+          window.removeEventListener('scroll', closeOnScroll, true);
           window.removeEventListener('resize', onClose);
         };
       }, [onClose]);
@@ -2076,8 +3200,9 @@ window.__ModuleLoader__.load({
     }
 
     function StateDot({ state, size }) {
-      const dimension = size ?? (state === 'ongoing' ? 14 : 10);
-      if (state === 'ongoing') {
+      const runningLight = state === 'ongoing' && runningLightPreference;
+      const dimension = size ?? (state === 'ongoing' && !runningLight ? 14 : 10);
+      if (state === 'ongoing' && !runningLight) {
         return h(
           'svg',
           {
@@ -2097,16 +3222,1234 @@ window.__ModuleLoader__.load({
       }
       return h('span', {
         className: 'dsg-stateDot',
-        'data-state': state,
+        'data-state': runningLight ? 'running-light' : state,
         style: { width: dimension, height: dimension },
         'aria-hidden': 'true',
       });
+    }
+
+    function formatExactNumber(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '—';
+      return Math.round(n).toLocaleString('en-US');
+    }
+
+    function formatDurationMs(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return '—';
+      const seconds = n / 1000;
+      if (seconds < 60) return `${(Math.round(seconds * 10) / 10).toFixed(1)}s`;
+      const whole = Math.round(seconds);
+      return `${Math.floor(whole / 60)}m ${whole % 60}s`;
+    }
+
+    function formatPercent(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return '—';
+      const percent = n * 100;
+      return `${percent >= 10 ? Math.round(percent) : Math.round(percent * 10) / 10}%`;
+    }
+
+    function formatBytes(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) return '—';
+      if (n < 1024) return `${Math.round(n)} B`;
+      const units = ['KB', 'MB', 'GB', 'TB'];
+      let size = n / 1024;
+      let unit = 0;
+      while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit += 1;
+      }
+      return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unit]}`;
+    }
+
+    function formatTps(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n <= 0) return '—';
+      return `${n >= 100 ? n.toFixed(0) : n.toFixed(1)} tok/s`;
+    }
+
+    function StatBar({ parts }) {
+      const visible = parts.filter((part) => Number(part.value) > 0);
+      const total = visible.reduce((sum, part) => sum + Number(part.value), 0);
+      if (total <= 0) return null;
+      return h(
+        'div',
+        { className: 'dsg-statBar', 'aria-hidden': 'true' },
+        visible.map((part) => h('span', {
+          key: part.key,
+          className: `dsg-statSegment ${part.className}`,
+          style: { width: `${Number(part.value) / total * 100}%` },
+        })),
+      );
+    }
+
+    function StatRow({ label, value, aggregation, icon: rowIcon, open, onToggle, children }) {
+      return h(
+        'div',
+        { className: 'dsg-statRow' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'dsg-statHeader',
+            'aria-expanded': open,
+            onClick: onToggle,
+          },
+          h('span', { className: 'dsg-statIcon', 'aria-hidden': 'true' }, rowIcon ? h(rowIcon, { width: 14, height: 14 }) : null),
+          h('span', { className: 'dsg-statLabel' }, label),
+          aggregation ? h('span', { className: 'dsg-statAgg' }, aggregation) : null,
+          h('span', { className: 'dsg-statValue' }, value),
+          h('span', { className: 'dsg-statChevron', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
+        ),
+        open ? h('div', { className: 'dsg-statBody' }, children) : null,
+      );
+    }
+
+    function ContextRing({ rate }) {
+      const radius = 5.5;
+      const circumference = 2 * Math.PI * radius;
+      return h(
+        'svg',
+        { viewBox: '0 0 14 14', width: 14, height: 14, className: 'dsg-contextRing', 'aria-hidden': 'true' },
+        h('circle', { className: 'dsg-contextRingTrack', cx: 7, cy: 7, r: radius }),
+        h('circle', {
+          className: 'dsg-contextRingFill',
+          cx: 7,
+          cy: 7,
+          r: radius,
+          strokeDasharray: `${circumference * Math.max(0, Math.min(1, rate))} ${circumference}`,
+          transform: 'rotate(-90 7 7)',
+        }),
+      );
+    }
+
+    function DataPanel(props) {
+      const {
+        kind,
+        title,
+        sessionIds,
+        pricing,
+        useSessions,
+        tr,
+        onClose,
+      } = props;
+      const list = typeof useSessions === 'function'
+        ? useSessions((state) => state)
+        : { ids: [], byId: {}, projectionsBySession: {} };
+      const [live, setLive] = React.useState({});
+      const [hostStatus, setHostStatus] = React.useState('loading');
+      const [loading, setLoading] = React.useState(true);
+      const [revision, setRevision] = React.useState(0);
+      const [expanded, setExpanded] = React.useState({
+        activity: false,
+        usage: false,
+        context: false,
+        cost: false,
+        models: false,
+        storage: false,
+        tools: false,
+      });
+      const [toolsMode, setToolsMode] = React.useState('available');
+      const idsKey = sessionIds.join('|');
+      const holidayKey = (pricing?.holidays ?? []).join(',');
+
+      React.useEffect(() => {
+        let active = true;
+        setLoading(true);
+        setHostStatus('loading');
+        fetchLiveSessionData(sessionIds, revision > 0, pricing?.holidays ?? []).then(({ rows, bridge, failed }) => {
+          if (!active) return;
+          setLive(Object.fromEntries(rows));
+          setHostStatus(!bridge ? 'unavailable' : failed ? 'partial' : 'ok');
+        }).catch(() => {
+          if (active) setHostStatus('error');
+        }).finally(() => {
+          if (active) setLoading(false);
+        });
+        return () => {
+          active = false;
+        };
+      }, [idsKey, holidayKey, revision]);
+
+      React.useEffect(() => {
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [onClose]);
+
+      const rows = React.useMemo(() => sessionIds.map((sessionId) => {
+        const host = live[sessionId];
+        const rawUsage = projectionOf(list, sessionId, 'tokenUsage');
+        const hostUsage = host?.tokenUsage;
+        const rawPressure = projectionOf(list, sessionId, 'contextPressure');
+        const rawStats = projectionOf(list, sessionId, 'sessionStats');
+        const rawBreakdown = projectionOf(list, sessionId, 'contextBreakdown');
+        const usage = usageSummary(rawUsage ?? hostUsage);
+        const pressure = rawPressure ?? host?.contextPressure;
+        const stats = rawStats ?? host?.stats;
+        const breakdown = rawBreakdown ?? host?.contextBreakdown;
+        const hasUsage = rawUsage !== undefined && rawUsage !== null || hostUsage !== undefined && hostUsage !== null;
+        const hasPressure = rawPressure !== undefined && rawPressure !== null || host?.contextPressure !== undefined;
+        const hasStats = rawStats !== undefined && rawStats !== null || host?.stats !== undefined;
+        const hasBreakdown = rawBreakdown !== undefined && rawBreakdown !== null || host?.contextBreakdown !== undefined;
+        const loggedSelection = projectionOf(list, sessionId, 'modelSelection');
+        const selectedModel = host?.model ?? loggedSelection?.next?.model ?? loggedSelection?.lastUsed?.model;
+        const selectedProvider = host?.provider ?? loggedSelection?.next?.provider ?? loggedSelection?.lastUsed?.provider;
+        const hasModelTime = Array.isArray(host?.modelUsage)
+          && host.modelUsage.some((entry) => Number(entry?.durationMs) > 0);
+        const modelUsage = Array.isArray(host?.modelUsage) && host.modelUsage.length > 0
+          ? host.modelUsage
+          : selectedModel
+            ? [{ provider: selectedProvider ?? '', model: selectedModel, durationMs: 0 }]
+            : [];
+        const fallbackPeriod = deepSeekPeakAt(Date.now(), pricing?.holidays) ? 'peak' : 'offPeak';
+        const noUsage = usageSummary({});
+        const periods = host?.usageByPeriod
+          ? {
+              peak: periodUsage(host.usageByPeriod.peak),
+              offPeak: periodUsage(host.usageByPeriod.offPeak),
+            }
+          : fallbackPeriod === 'peak'
+            ? { peak: usage, offPeak: noUsage }
+            : { peak: noUsage, offPeak: usage };
+        const periodTotal = periods.peak.total + periods.offPeak.total;
+        const hasPeriodCoverage = usage.total === 0 || periodTotal > 0;
+        return {
+          id: sessionId,
+          usage,
+          pressure,
+          context: contextRateOf(pressure),
+          stats,
+          breakdown,
+          periods,
+          hasUsage,
+          hasPressure,
+          hasStats,
+          hasBreakdown,
+          hasModelTime,
+          estimatedPeriod: !host?.usageByPeriod && hasUsage,
+          hasPeriodCoverage,
+          model: selectedModel,
+          provider: selectedProvider,
+          modelUsage,
+          toolSource: host?.toolSource,
+          tools: host?.tools ?? [],
+          hasFileSize: Number.isFinite(Number(host?.fileBytes)),
+          fileBytes: Number.isFinite(Number(host?.fileBytes)) ? Number(host.fileBytes) : 0,
+          eventCount: Number.isFinite(Number(host?.eventCount)) ? Number(host.eventCount) : 0,
+          hasEventCount: Number.isFinite(Number(host?.eventCount)),
+          cost: hasUsage && hasPeriodCoverage ? costOfPeriods(periods, pricing) : null,
+        };
+      }), [list, live, idsKey, holidayKey, pricing]);
+
+      const totals = rows.reduce((acc, row) => ({
+        input: acc.input + row.usage.input,
+        cacheRead: acc.cacheRead + row.usage.cacheRead,
+        cacheWrite: acc.cacheWrite + row.usage.cacheWrite,
+        output: acc.output + row.usage.output,
+        reasoning: acc.reasoning + row.usage.reasoning,
+        total: acc.total + row.usage.total,
+      }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 });
+      const cacheBase = totals.input + totals.cacheRead + totals.cacheWrite;
+      const cacheRate = cacheBase > 0 ? totals.cacheRead / cacheBase : 0;
+      const costs = rows.map((row) => row.cost);
+      const knownCosts = costs.filter((value) => value !== null);
+      const costPartial = knownCosts.length > 0 && knownCosts.length < costs.length;
+      const totalCost = knownCosts.length > 0
+        ? knownCosts.reduce((sum, value) => sum + value, 0)
+        : null;
+      const hostUnavailable = hostStatus === 'unavailable';
+      const activeRows = rows.filter((row) => {
+        const host = live[row.id];
+        return Boolean(host) && host.live === true && !host.error;
+      });
+      const errorRows = rows.filter((row) => {
+        const host = live[row.id];
+        return Boolean(host?.error) || (hostStatus === 'error' && !host);
+      });
+      const nonActiveRows = hostUnavailable || hostStatus === 'loading'
+        ? []
+        : rows.filter((row) => {
+            const host = live[row.id];
+            return !host || (host.live === false && !host.error);
+          });
+      const toolRows = activeRows;
+      const toolSnapshot = toolRows.some((row) => row.toolSource === 'snapshot');
+      const toolMap = new Map();
+      for (const row of toolRows) mergeTools(toolMap, row.tools);
+      const tools = [...toolMap.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name));
+      const availableTools = tools.filter((tool) => tool.available).length;
+      const closedTools = tools.length - availableTools;
+      const visibleTools = tools.filter((tool) => (toolsMode === 'available' ? tool.available : !tool.available));
+      const totalCalls = tools.reduce((sum, tool) => sum + tool.calls, 0);
+      const isSession = kind === 'session';
+      const showToolSection = isSession && (hostStatus === 'loading' || toolRows.length > 0);
+      const toolHideNotice = !showToolSection
+        ? hostUnavailable ? tr('data.toolHostUnavailable')
+          : errorRows.length > 0 ? tr('data.toolReadError')
+            : nonActiveRows.length > 0 ? tr('data.toolNonActive')
+              : null
+        : null;
+      const toolExtraNotes = showToolSection
+        ? [
+            nonActiveRows.length > 0
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.toolSkippedNonActive', { count: nonActiveRows.length }))
+              : null,
+            errorRows.length > 0
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.toolPartialError', { count: errorRows.length }))
+              : null,
+          ].filter(Boolean)
+        : [];
+      const stats = rows.reduce((acc, row) => {
+        const value = row.stats ?? {};
+        return {
+          turns: acc.turns + (Number(value.turns) || 0),
+          steps: acc.steps + (Number(value.steps) || 0),
+          llmMs: acc.llmMs + (Number(value.llmMs) || 0),
+          toolMs: acc.toolMs + (Number(value.toolMs) || 0),
+          ttftMs: acc.ttftMs + (Number(value.ttftMs) || 0),
+          ttftSteps: acc.ttftSteps + (Number(value.ttftSteps) || 0),
+          decodeMs: acc.decodeMs + (Number(value.decodeMs) || 0),
+          decodeTokens: acc.decodeTokens + (Number(value.decodeTokens) || 0),
+        };
+      }, { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 });
+      const anyStats = rows.some((row) => row.hasStats);
+      const hasStats = rows.some((row) => row.stats && (row.stats.turns || row.stats.steps || row.stats.llmMs));
+      const anyUsage = rows.some((row) => row.hasUsage);
+      const periodPartial = rows.some((row) => row.hasUsage && row.hasPeriodCoverage === false);
+      const usagePartial = anyUsage && !rows.every((row) => row.hasUsage);
+      const anyBreakdown = rows.some((row) => row.hasBreakdown);
+      const breakdownPartial = anyBreakdown && !rows.every((row) => row.hasBreakdown);
+      const statsPartial = anyStats && !rows.every((row) => row.hasStats);
+      const anyModelTime = rows.some((row) => row.hasModelTime);
+      const modelTimePartial = anyModelTime && !rows.every((row) => row.hasModelTime);
+      const speed = isSession && stats.decodeMs > 0 ? formatTps(stats.decodeTokens / (stats.decodeMs / 1000)) : null;
+      const breakdownRows = rows.filter((row) => row.hasBreakdown);
+      const breakdownCount = breakdownRows.length;
+      const breakdownSum = breakdownRows.reduce((acc, row) => ({
+        systemTokens: acc.systemTokens + (Number(row.breakdown?.systemTokens) || 0),
+        toolsTokens: acc.toolsTokens + (Number(row.breakdown?.toolsTokens) || 0),
+        messageTokens: acc.messageTokens + (Number(row.breakdown?.messageTokens) || 0),
+      }), { systemTokens: 0, toolsTokens: 0, messageTokens: 0 });
+      const breakdown = isSession
+        ? breakdownSum
+        : {
+            systemTokens: breakdownCount > 0 ? breakdownSum.systemTokens / breakdownCount : 0,
+            toolsTokens: breakdownCount > 0 ? breakdownSum.toolsTokens / breakdownCount : 0,
+            messageTokens: breakdownCount > 0 ? breakdownSum.messageTokens / breakdownCount : 0,
+          };
+      const breakdownTotal = breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens;
+      const sessionContext = isSession ? rows[0]?.context ?? null : null;
+      const percent = sessionContext === null ? null : Math.min(100, Math.round(sessionContext.rate * 100));
+      const remainingContext = sessionContext === null ? 0 : Math.max(0, sessionContext.window - breakdownTotal);
+      const totalPeriods = rows.reduce((acc, row) => ({
+        peak: {
+          input: acc.peak.input + row.periods.peak.input,
+          cacheRead: acc.peak.cacheRead + row.periods.peak.cacheRead,
+          cacheWrite: acc.peak.cacheWrite + row.periods.peak.cacheWrite,
+          output: acc.peak.output + row.periods.peak.output,
+          total: acc.peak.total + row.periods.peak.total,
+        },
+        offPeak: {
+          input: acc.offPeak.input + row.periods.offPeak.input,
+          cacheRead: acc.offPeak.cacheRead + row.periods.offPeak.cacheRead,
+          cacheWrite: acc.offPeak.cacheWrite + row.periods.offPeak.cacheWrite,
+          output: acc.offPeak.output + row.periods.offPeak.output,
+          total: acc.offPeak.total + row.periods.offPeak.total,
+        },
+      }), {
+        peak: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 },
+        offPeak: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 },
+      });
+      const costPeriods = [
+        { key: 'peak', label: tr('data.peak'), usage: totalPeriods.peak, rates: pricing?.peak },
+        { key: 'offPeak', label: tr('data.offPeak'), usage: totalPeriods.offPeak, rates: pricing?.offPeak },
+      ].map((period) => ({
+        ...period,
+        cost: costOfUsage(period.usage, period.rates),
+      })).filter((period) => period.usage.total > 0);
+      const periodParts = [
+        { key: 'input', label: tr('data.input'), field: 'input' },
+        { key: 'cacheRead', label: tr('data.cacheRead'), field: 'cacheRead' },
+        { key: 'cacheWrite', label: tr('data.cacheWrite'), field: 'cacheWrite' },
+        { key: 'output', label: tr('data.output'), field: 'output' },
+      ];
+      const estimatedPeriod = rows.some((row) => row.estimatedPeriod);
+      const modelMap = new Map();
+      for (const row of rows) {
+        for (const entry of row.modelUsage) {
+          if (!entry || typeof entry.provider !== 'string' || typeof entry.model !== 'string') continue;
+          const key = `${entry.provider}\u0000${entry.model}`;
+          const current = modelMap.get(key) ?? {
+            provider: entry.provider,
+            model: entry.model,
+            durationMs: 0,
+          };
+          current.durationMs += Math.max(0, Number(entry.durationMs) || 0);
+          modelMap.set(key, current);
+        }
+      }
+      const modelRows = [...modelMap.values()]
+        .sort((a, b) => b.durationMs - a.durationMs || a.model.localeCompare(b.model));
+      const modelTotalMs = modelRows.reduce((sum, entry) => sum + entry.durationMs, 0);
+      for (const entry of modelRows) {
+        entry.share = modelTotalMs > 0
+          ? entry.durationMs / modelTotalMs
+          : 1 / modelRows.length;
+      }
+      const modelValue = modelRows.length === 0
+        ? '—'
+        : !anyModelTime
+          ? modelRows.length === 1
+            ? `${modelRows[0].model} · ${tr('data.noTimeShort')}`
+            : `${modelRows.length} ${tr('data.models')} · ${tr('data.noTimeShort')}`
+          : modelRows.length === 1
+            ? `${modelRows[0].model} · 100%`
+            : `${modelRows.length} ${tr('data.models')} · ${formatDurationMs(modelTotalMs)}`;
+
+      const fileSizeRows = rows.filter((row) => row.hasFileSize);
+      const anyFileSize = fileSizeRows.length > 0;
+      const fileSizePartial = anyFileSize && fileSizeRows.length < rows.length;
+      const totalFileBytes = fileSizeRows.reduce((sum, row) => sum + row.fileBytes, 0);
+      const eventCountRows = rows.filter((row) => row.hasEventCount);
+      const anyEventCount = eventCountRows.length > 0;
+      const totalEventCount = eventCountRows.reduce((sum, row) => sum + row.eventCount, 0);
+      const eventCountPartial = anyEventCount && eventCountRows.length < rows.length;
+      const fileValue = anyFileSize ? formatBytes(totalFileBytes) : '—';
+
+      const dataIncomplete = !anyUsage
+        || periodPartial
+        || costPartial
+        || !anyFileSize
+        || usagePartial
+        || !anyStats
+        || statsPartial
+        || !anyBreakdown
+        || breakdownPartial
+        || (modelRows.length > 0 && !anyModelTime)
+        || modelTimePartial
+        || estimatedPeriod
+        || totalCost === null
+        || !pricingConfigured(pricing);
+
+      const modelCounts = new Map();
+      for (const row of rows) {
+        if (row.model) modelCounts.set(row.model, (modelCounts.get(row.model) ?? 0) + 1);
+      }
+      const models = [...modelCounts.entries()].map(([model, count]) => `${model} × ${count}`);
+      const running = sessionIds.filter((id) => list.byId?.[id]?.running === true).length;
+      const modelText = isSession
+        ? (rows[0]?.provider ? `${rows[0].provider} / ${rows[0]?.model ?? '—'}` : rows[0]?.model ?? '—')
+        : models.join(', ') || '—';
+      const metaText = isSession
+        ? `${modelText}${hasStats ? ` · ${tr('data.turns')} ${stats.turns}` : ''}`
+        : `${rows.length} ${tr('data.sessions')} · ${running} ${tr('status.running')}`;
+      const swatched = (label, className) => h(
+        'span',
+        { className: 'dsg-statDetailLabel' },
+        h('span', { className: `dsg-statSwatch ${className}`, 'aria-hidden': 'true' }),
+        label,
+      );
+      const detailList = (entries) => h(
+        'dl',
+        { className: 'dsg-statDetails' },
+        entries.map(([label, value]) => h(
+          'div',
+          { key: label, className: 'dsg-statDetail' },
+          h('dt', {}, label),
+          h('dd', {}, value),
+        )),
+      );
+      const toggle = (key) => setExpanded((previous) => ({ ...previous, [key]: !previous[key] }));
+      const activityValue = !anyStats
+        ? '—'
+        : hasStats
+          ? `${stats.turns} ${tr('data.turns')} · ${stats.steps} ${tr('data.steps')}${speed ? ` · ${speed}` : ''}`
+          : '—';
+      const usageValue = anyUsage
+        ? `${formatCompactNumber(totals.total)}${cacheBase > 0 ? ` · ${(cacheRate * 100).toFixed(1)}%` : ''}`
+        : '—';
+      const contextValue = sessionContext !== null
+        ? h(
+            React.Fragment,
+            null,
+            h(ContextRing, { rate: sessionContext.rate }),
+            ` ~${percent}% · ~${formatCompactNumber(sessionContext.used)} / ${formatCompactNumber(sessionContext.window)}`,
+          )
+        : breakdownTotal > 0 ? `~${formatCompactNumber(breakdownTotal)}` : '—';
+      const toolsValue = `${availableTools} ${tr('data.toolsAvailable')} · ${closedTools} ${tr('data.toolsClosed')} · ${totalCalls} ${tr('data.toolCalls')}`;
+
+      return h(
+        'div',
+        {
+          className: 'dsg-dataOverlay',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onClose();
+          },
+        },
+        h(
+          'section',
+          {
+            className: 'dsg-dataPanel',
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-label': title,
+          },
+          h(
+            'header',
+            { className: 'dsg-dataHeader' },
+            h(
+              'div',
+              { className: 'dsg-dataHeading' },
+              h('div', { className: 'dsg-dataTitle' }, title),
+              h('div', { className: 'dsg-dataMeta' }, metaText),
+            ),
+            h(
+              'div',
+              { className: 'dsg-dataHeaderActions' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-dataRefresh',
+                  title: tr('data.refresh'),
+                  'aria-label': tr('data.refresh'),
+                  disabled: loading,
+                  onClick: () => setRevision((value) => value + 1),
+                },
+                loading ? '…' : '↻',
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-dataClose',
+                  title: tr('data.close'),
+                  'aria-label': tr('data.close'),
+                  onClick: onClose,
+                },
+                '×',
+              ),
+            ),
+          ),
+          h(
+            'div',
+            { className: 'dsg-dataBody' },
+            !isSession
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.aggregationHint'))
+              : null,
+            dataIncomplete
+              ? h('div', { className: 'dsg-dataHint' }, tr('data.incompleteHint'))
+              : null,
+            h(
+              'div',
+              { className: 'dsg-statList' },
+              h(
+                StatRow,
+                {
+                  label: tr('data.activity'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconGauge,
+                  value: activityValue,
+                  open: expanded.activity,
+                  onToggle: () => toggle('activity'),
+                },
+                detailList(isSession
+                  ? [
+                      [tr('data.turns'), hasStats ? formatExactNumber(stats.turns) : '—'],
+                      [tr('data.steps'), hasStats ? formatExactNumber(stats.steps) : '—'],
+                      [tr('data.llmTime'), formatDurationMs(stats.llmMs)],
+                      [tr('data.toolTime'), formatDurationMs(stats.toolMs)],
+                      [tr('data.ttft'), stats.ttftSteps > 0 ? formatDurationMs(stats.ttftMs / stats.ttftSteps) : '—'],
+                      [tr('data.speed'), speed ?? '—'],
+                    ]
+                  : [
+                      [tr('data.turns'), hasStats ? formatExactNumber(stats.turns) : '—'],
+                      [tr('data.steps'), hasStats ? formatExactNumber(stats.steps) : '—'],
+                      [tr('data.llmTime'), formatDurationMs(stats.llmMs)],
+                      [tr('data.toolTime'), formatDurationMs(stats.toolMs)],
+                    ]),
+                !anyStats
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.noStatsData'))
+                  : statsPartial
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.partialStats'))
+                    : null,
+              ),
+              h(
+                StatRow,
+                {
+                  label: tr('data.usage'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconDatabase,
+                  value: usageValue,
+                  open: expanded.usage,
+                  onToggle: () => toggle('usage'),
+                },
+                h(StatBar, {
+                  parts: [
+                    { key: 'input', value: totals.input, className: 'dsg-segInput' },
+                    { key: 'cacheRead', value: totals.cacheRead, className: 'dsg-segCacheRead' },
+                    { key: 'cacheWrite', value: totals.cacheWrite, className: 'dsg-segCacheWrite' },
+                    { key: 'output', value: totals.output, className: 'dsg-segOutput' },
+                  ],
+                }),
+                detailList([
+                  [tr('data.cacheHit'), anyUsage && cacheBase > 0 ? `${(cacheRate * 100).toFixed(1)}%` : '—'],
+                  [swatched(tr('data.input'), 'dsg-segInput'), anyUsage ? formatExactNumber(totals.input) : '—'],
+                  [swatched(tr('data.cacheRead'), 'dsg-segCacheRead'), anyUsage ? formatExactNumber(totals.cacheRead) : '—'],
+                  [swatched(tr('data.cacheWrite'), 'dsg-segCacheWrite'), anyUsage ? formatExactNumber(totals.cacheWrite) : '—'],
+                  [swatched(tr('data.output'), 'dsg-segOutput'), anyUsage ? formatExactNumber(totals.output) : '—'],
+                  ...(anyUsage && totals.reasoning > 0 ? [[tr('data.reasoning'), formatExactNumber(totals.reasoning)]] : []),
+                ]),
+                !anyUsage
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.noUsageData'))
+                  : usagePartial
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.partialUsage'))
+                    : null,
+              ),
+              h(
+                StatRow,
+                {
+                  label: tr('data.context'),
+                  aggregation: isSession ? undefined : tr('data.aggAverage'),
+                  icon: IconContext,
+                  value: contextValue,
+                  open: expanded.context,
+                  onToggle: () => toggle('context'),
+                },
+                breakdownTotal > 0
+                  ? isSession
+                    ? h(
+                        React.Fragment,
+                        null,
+                        h(StatBar, {
+                          parts: [
+                            { key: 'system', value: breakdown.systemTokens, className: 'dsg-segSystem' },
+                            { key: 'tools', value: breakdown.toolsTokens, className: 'dsg-segTools' },
+                            { key: 'messages', value: breakdown.messageTokens, className: 'dsg-segMessages' },
+                            { key: 'remaining', value: remainingContext, className: 'dsg-segRemaining' },
+                          ],
+                        }),
+                        detailList([
+                          [swatched(tr('data.system'), 'dsg-segSystem'), `~${formatCompactNumber(breakdown.systemTokens)}`],
+                          [swatched(tr('data.tools'), 'dsg-segTools'), `~${formatCompactNumber(breakdown.toolsTokens)}`],
+                          [swatched(tr('data.messages'), 'dsg-segMessages'), `~${formatCompactNumber(breakdown.messageTokens)}`],
+                          [swatched(tr('data.remaining'), 'dsg-segRemaining'), `~${formatCompactNumber(remainingContext)}`],
+                        ]),
+                      )
+                    : detailList([
+                        [swatched(tr('data.system'), 'dsg-segSystem'), `~${formatCompactNumber(breakdown.systemTokens)}`],
+                        [swatched(tr('data.tools'), 'dsg-segTools'), `~${formatCompactNumber(breakdown.toolsTokens)}`],
+                        [swatched(tr('data.messages'), 'dsg-segMessages'), `~${formatCompactNumber(breakdown.messageTokens)}`],
+                      ])
+                  : h('div', { className: 'dsg-dataHint' }, tr('data.noBreakdown')),
+                breakdownPartial
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.partialBreakdown'))
+                  : null,
+              ),
+              modelRows.length > 0 ? h(
+                StatRow,
+                {
+                  label: tr('data.models'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconModel,
+                  value: modelValue,
+                  open: expanded.models,
+                  onToggle: () => toggle('models'),
+                },
+                anyModelTime
+                  ? h(StatBar, {
+                      parts: modelRows.map((entry, index) => ({
+                        key: `${entry.provider}/${entry.model}`,
+                        value: entry.durationMs,
+                        className: `dsg-segModel${index % 5}`,
+                      })),
+                    })
+                  : null,
+                h('div', { className: 'dsg-dataHint' }, tr('data.modelTimeHint')),
+                detailList(modelRows.map((entry, index) => [
+                  swatched(`${entry.model}`, `dsg-segModel${index % 5}`),
+                  anyModelTime
+                    ? `${formatPercent(entry.share)} · ${formatDurationMs(entry.durationMs)}`
+                    : '—',
+                ])),
+                !anyModelTime
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.modelTimeUnavailable'))
+                  : modelTimePartial
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.modelTimePartial'))
+                    : null,
+              ) : null,
+              h(
+                StatRow,
+                {
+                  label: tr('data.fileSize'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconStorage,
+                  value: fileValue,
+                  open: expanded.storage,
+                  onToggle: () => toggle('storage'),
+                },
+                detailList([
+                  [tr('data.fileSize'), anyFileSize ? formatBytes(totalFileBytes) : '—'],
+                  [tr('data.fileEvents'), anyEventCount ? formatExactNumber(totalEventCount) : '—'],
+                  ...(fileSizePartial ? [[tr('data.fileSessions'), `${fileSizeRows.length} / ${rows.length}`]] : []),
+                ]),
+                h('div', { className: 'dsg-dataHint' }, anyFileSize
+                  ? tr('data.fileSizeHint')
+                  : tr('data.fileSizeUnavailable')),
+                fileSizePartial
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.fileSizePartial'))
+                  : null,
+                eventCountPartial
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.fileEventPartial'))
+                  : null,
+              ),
+              h(
+                StatRow,
+                {
+                  label: tr('data.cost'),
+                  aggregation: isSession ? undefined : tr('data.aggSum'),
+                  icon: IconCoin,
+                  value: pricingConfigured(pricing) && knownCosts.length > 0 ? formatCost(totalCost) : '—',
+                  open: expanded.cost,
+                  onToggle: () => toggle('cost'),
+                },
+                !pricingConfigured(pricing)
+                  ? h('div', { className: 'dsg-dataHint' }, `${tr('data.noPrice')} · ${tr('data.priceHint')}`)
+                  : !anyUsage
+                    ? h('div', { className: 'dsg-dataHint' }, tr('data.noCostUsage'))
+                    : h(
+                      React.Fragment,
+                      null,
+                      h(StatBar, {
+                        parts: costPeriods.map((period) => ({
+                          key: period.key,
+                          value: period.cost ?? 0,
+                          className: period.key === 'peak' ? 'dsg-segPeak' : 'dsg-segOffPeak',
+                        })),
+                      }),
+                      h('div', { className: 'dsg-dataHint' }, `${tr('data.perMillion')} · ${tr('data.peakSchedule')}`),
+                      ...costPeriods
+                        .filter((period) => period.usage.total > 0)
+                        .map((period) => h(
+                          'div',
+                          { key: period.key, className: 'dsg-dataCostPeriod' },
+                          h(
+                            'div',
+                            { className: 'dsg-dataCostPeriodTitle' },
+                            h('span', {}, period.label),
+                            h('span', {}, formatCost(period.cost)),
+                          ),
+                          h('div', { className: 'dsg-dataCostHead' },
+                            h('span', {}, tr('data.item')),
+                            h('span', {}, tr('data.tokens')),
+                            h('span', {}, tr('data.price')),
+                            h('span', {}, tr('data.amount'))),
+                          ...periodParts.map((part) => h(
+                            'div',
+                            { key: part.key, className: 'dsg-dataCostRow' },
+                            h('span', { className: 'dsg-dataCostLabel' }, h('span', { className: `dsg-statSwatch dsg-seg${part.key.charAt(0).toUpperCase()}${part.key.slice(1)}`, 'aria-hidden': 'true' }), part.label),
+                            h('span', { className: 'dsg-dataCostTokens' }, formatCompactNumber(period.usage[part.field])),
+                            h('span', { className: 'dsg-dataCostPrice' }, Number.isFinite(Number(period.rates?.[part.field])) ? `¥${Number(period.rates[part.field]).toFixed(4)}` : '—'),
+                            h('span', { className: 'dsg-dataCostAmount' }, formatCost(
+                              Number.isFinite(Number(period.rates?.[part.field]))
+                                ? period.usage[part.field] / 1e6 * Number(period.rates[part.field])
+                                : null,
+                            )),
+                          )),
+                        )),
+                      h('div', { className: 'dsg-dataCostTotal' },
+                        h('span', {}, tr('data.cost')),
+                        h('span', {}, formatCost(totalCost))),
+                      estimatedPeriod
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.estimatedPeriod'))
+                        : null,
+                      totalCost === null && pricingConfigured(pricing)
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.missingPeriodPrice'))
+                        : null,
+                      periodPartial
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.noPeriodData'))
+                        : null,
+                      costPartial
+                        ? h('div', { className: 'dsg-dataHint' }, tr('data.costPartial'))
+                        : null,
+                    ),
+              ),
+              showToolSection ? h(
+                StatRow,
+                {
+                  label: tr('data.tools'),
+                  icon: IconWrench,
+                  value: toolsValue,
+                  open: expanded.tools,
+                  onToggle: () => toggle('tools'),
+                },
+                h(
+                  'div',
+                  { className: 'dsg-dataToolModes', role: 'group', 'aria-label': tr('data.tools') },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsg-dataToolMode' + (toolsMode === 'available' ? ' active' : ''),
+                      'aria-pressed': toolsMode === 'available',
+                      onClick: () => setToolsMode('available'),
+                    },
+                    `${tr('data.toolsAvailable')} (${availableTools})`,
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsg-dataToolMode' + (toolsMode === 'unavailable' ? ' active' : ''),
+                      'aria-pressed': toolsMode === 'unavailable',
+                      onClick: () => setToolsMode('unavailable'),
+                    },
+                    `${tr('data.toolsClosed')} (${closedTools})`,
+                  ),
+                ),
+                visibleTools.length > 0
+                  ? h(
+                      'div',
+                      { className: 'dsg-dataTools' },
+                      visibleTools.map((tool) => h(
+                        'div',
+                        { key: tool.name, className: 'dsg-dataToolRow' },
+                        h(
+                          'span',
+                          { className: 'dsg-dataToolName' },
+                          tool.available ? null : h('span', { className: 'dsg-dataToolMuted' }, '· '),
+                          tool.name,
+                        ),
+                        h(
+                          'span',
+                          { className: 'dsg-dataToolStats' },
+                          `${tool.calls} ${tr('data.toolCalls')}`,
+                          tool.errors > 0 ? ` · ${tool.errors} ${tr('data.toolErrors')}` : '',
+                        ),
+                      )),
+                    )
+                  : h('div', { className: 'dsg-dataHint' }, loading
+                      ? tr('data.loading')
+                      : tools.length === 0 ? tr('data.toolNoVisible')
+                        : toolsMode === 'available' ? tr('data.noAvailableTools') : tr('data.noClosedTools')),
+                h('div', { className: 'dsg-dataHint' }, tr('data.toolsScope')),
+                toolSnapshot
+                  ? h('div', { className: 'dsg-dataHint' }, tr('data.toolSnapshot'))
+                  : null,
+                ...toolExtraNotes,
+              ) : null,
+              isSession && !showToolSection && toolHideNotice
+                ? h('div', { className: 'dsg-dataHint' }, toolHideNotice)
+                : null,
+            ),
+          ),
+          h(
+            'footer',
+            { className: 'dsg-dataFooter' },
+            h('span', {}, tr('data.note')),
+            loading ? h('span', {}, tr('data.loading')) : null,
+          ),
+        ),
+      );
+    }
+
+    function DeleteSessionDialog(props) {
+      const { sessionId, title, knownRunning, knownSubagents, currentSessionId, tr: translator, onClose, onDeleted } = props;
+      const tr = typeof translator === 'function' ? translator : translate;
+      const [preflight, setPreflight] = React.useState(null);
+      const [loading, setLoading] = React.useState(true);
+      const [error, setError] = React.useState(null);
+      const [submitting, setSubmitting] = React.useState(false);
+
+      React.useEffect(() => {
+        let active = true;
+        requestSessionDelete({ sessionId, confirm: false, knownSubagents, currentSessionId }).then((result) => {
+          if (!active) return;
+          setPreflight(result);
+        }).catch((reason) => {
+          if (active) setError(reason.message);
+        }).finally(() => {
+          if (active) setLoading(false);
+        });
+        return () => {
+          active = false;
+        };
+      }, [sessionId]);
+
+      React.useEffect(() => {
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape' && !submitting) onClose();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+      }, [onClose, submitting]);
+
+      const children = Array.isArray(preflight?.children) ? preflight.children : [];
+      const running = Array.isArray(preflight?.running) ? preflight.running : [];
+      const childCount = Math.max(children.length, Number(knownSubagents) || 0);
+      const hasRunning = running.length > 0 || knownRunning === true;
+      const safety = preflight?.safety ?? null;
+      const canDelete = Boolean(preflight) && safety?.ok !== false && !submitting;
+
+      const submit = () => {
+        if (!canDelete) return;
+        setSubmitting(true);
+        setError(null);
+        requestSessionDelete({
+          sessionId,
+          confirm: true,
+          cascadeSubagents: childCount > 0,
+          stopRunning: hasRunning,
+          knownSubagents: childCount,
+          currentSessionId,
+          title,
+        }).then((result) => {
+          onDeleted(result);
+        }).catch((reason) => {
+          setError(reason.message);
+          setSubmitting(false);
+        });
+      };
+
+      return h(
+        'div',
+        {
+          className: 'dsg-deleteOverlay',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && !submitting) onClose();
+          },
+        },
+        h(
+          'section',
+          { className: 'dsg-deletePanel', role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('delete.title') },
+          h('div', { className: 'dsg-deleteTitle' }, tr('delete.title')),
+          h('div', { className: 'dsg-deleteTarget' }, `「${title}」`),
+          h('p', { className: 'dsg-deleteWarning' }, tr('delete.warning')),
+          loading
+            ? h('div', { className: 'dsg-deleteMuted' }, tr('delete.checking'))
+            : null,
+          safety
+            ? h(
+                'div',
+                { className: 'dsg-deleteSafety ' + (safety.ok ? 'ok' : 'fail') },
+                h('div', { className: 'dsg-deleteSafetyTitle' }, safety.ok ? tr('delete.safetyOk') : tr('delete.safetyFail')),
+                safety.ok
+                  ? null
+                  : h('div', { className: 'dsg-deleteSafetyList' },
+                      safety.checks
+                        .filter((check) => !check.ok)
+                        .map((check) => h('div', { key: check.key }, `· ${tr(`delete.safety.${check.key}`)}`))),
+              )
+            : null,
+          h(
+            'div',
+            { className: 'dsg-deleteOperations' },
+            h('div', { className: 'dsg-deleteOperationsTitle' }, tr('delete.willDo')),
+            h('div', { className: 'dsg-deleteOperation' }, `• ${tr('delete.willRemove')}`),
+            hasRunning
+              ? h('div', { className: 'dsg-deleteOperation' }, `• ${tr('delete.willStop')}`)
+              : null,
+            childCount > 0
+              ? h('div', { className: 'dsg-deleteOperation' }, `• ${tr('delete.willCascade', { count: childCount })}`)
+              : null,
+          ),
+          error ? h('div', { className: 'dsg-deleteError' }, error) : null,
+          h(
+            'div',
+            { className: 'dsg-deleteActions' },
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-deleteButton',
+                disabled: submitting,
+                onClick: onClose,
+              },
+              tr('delete.cancel'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-deleteButton danger',
+                disabled: !canDelete,
+                onClick: submit,
+              },
+              submitting ? tr('delete.deleting') : tr('delete.action'),
+            ),
+          ),
+        ),
+      );
+    }
+
+    function SessionGroupsSettings(props) {
+      const tr = typeof props.t === 'function' ? props.t : translate;
+      const [runningLight, setRunningLight] = React.useState(() => loadPrefs().runningLight === true);
+      const [priceMode, setPriceMode] = React.useState('peak');
+      const [holidayText, setHolidayText] = React.useState(() => (loadPrefs().pricing?.holidays ?? []).join(', '));
+      const makePriceValues = (pricing) => {
+        const source = pricing ?? {};
+        const valuesFor = (rates) => ({
+          input: rates?.input === undefined ? '' : String(rates.input),
+          cacheRead: rates?.cacheRead === undefined ? '' : String(rates.cacheRead),
+          cacheWrite: rates?.cacheWrite === undefined ? '' : String(rates.cacheWrite),
+          output: rates?.output === undefined ? '' : String(rates.output),
+        });
+        return {
+          peak: valuesFor(source.peak),
+          offPeak: valuesFor(source.offPeak),
+        };
+      };
+      const [priceValues, setPriceValues] = React.useState(() => makePriceValues(loadPrefs().pricing));
+
+      React.useEffect(() => {
+        const sync = () => {
+          const prefs = loadPrefs();
+          setRunningLight(prefs.runningLight === true);
+          setHolidayText((prefs.pricing?.holidays ?? []).join(', '));
+          setPriceValues(makePriceValues(prefs.pricing));
+        };
+        window.addEventListener(BRIDGE_EVENT, sync);
+        return () => window.removeEventListener(BRIDGE_EVENT, sync);
+      }, []);
+
+      const toggleRunningLight = () => {
+        const next = !runningLight;
+        setRunningLight(next);
+        setRunningLightPreference(next);
+      };
+
+      const updatePrice = (key, raw) => {
+        setPriceValues((previous) => ({
+          ...previous,
+          [priceMode]: { ...previous[priceMode], [key]: raw },
+        }));
+      };
+
+      const commitPrice = (key) => {
+        const trimmed = String(priceValues[priceMode]?.[key] ?? '').trim();
+        const numeric = trimmed === '' ? undefined : Number(trimmed);
+        if (numeric !== undefined && (!Number.isFinite(numeric) || numeric < 0)) return;
+        const prefs = loadPrefs();
+        const pricing = {
+          peak: { ...(prefs.pricing?.peak ?? {}) },
+          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
+          currency: 'CNY',
+          touched: true,
+          ...(Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0 ? { holidays: prefs.pricing.holidays } : {}),
+        };
+        if (numeric === undefined) delete pricing[priceMode][key];
+        else pricing[priceMode][key] = numeric;
+        savePrefs({ ...prefs, pricing });
+        try {
+          window.dispatchEvent(new Event(BRIDGE_EVENT));
+        } catch {
+          /* the data panel reads the value on its next open */
+        }
+      };
+
+      const savePrices = () => {
+        const pricing = {
+          peak: {},
+          offPeak: {},
+          currency: 'CNY',
+          touched: true,
+        };
+        for (const mode of ['peak', 'offPeak']) {
+          for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
+            const trimmed = String(priceValues[mode]?.[key] ?? '').trim();
+            if (trimmed === '') continue;
+            const numeric = Number(trimmed);
+            if (!Number.isFinite(numeric) || numeric < 0) return;
+            pricing[mode][key] = numeric;
+          }
+        }
+        const prefs = loadPrefs();
+        if (Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0) {
+          pricing.holidays = prefs.pricing.holidays;
+        }
+        savePrefs({ ...prefs, pricing });
+        try {
+          window.dispatchEvent(new Event(BRIDGE_EVENT));
+        } catch {
+          /* the data panel reads the value on its next open */
+        }
+      };
+
+      const commitHolidays = () => {
+        const days = [...new Set(
+          String(holidayText)
+            .split(/[,，\s]+/)
+            .map((day) => day.trim())
+            .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
+        )].sort();
+        const prefs = loadPrefs();
+        const pricing = {
+          peak: { ...(prefs.pricing?.peak ?? {}) },
+          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
+          currency: 'CNY',
+          touched: true,
+        };
+        if (days.length > 0) pricing.holidays = days;
+        savePrefs({ ...prefs, pricing });
+        setHolidayText(days.join(', '));
+        try {
+          window.dispatchEvent(new Event(BRIDGE_EVENT));
+        } catch {
+          /* the data panel reads the value on its next open */
+        }
+      };
+
+      const label = tr('settings.runningLight');
+      return h(
+        'div',
+        { className: 'dsg-settingsPage' },
+        h('h2', { className: 'dsg-settingsTitle' }, tr('settings.title')),
+        h('p', { className: 'dsg-settingsIntro' }, tr('settings.intro')),
+        h(
+          'div',
+          { className: 'dsg-settingsRow' },
+          h(
+            'div',
+            { className: 'dsg-settingsMain' },
+            h(
+              'div',
+              { className: 'dsg-settingsLabelRow' },
+              h(
+                'span',
+                { className: 'dsg-settingsPreviewStatus', 'aria-hidden': 'true' },
+                h(StateDot, { state: 'ongoing' }),
+              ),
+              h('span', { className: 'dsg-settingsLabel' }, label),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.runningLightHint')),
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              role: 'switch',
+              className: 'dsg-switch',
+              'aria-checked': runningLight,
+              'aria-label': label,
+              onClick: toggleRunningLight,
+            },
+            h('span', { className: 'dsg-switchThumb', 'aria-hidden': 'true' }),
+          ),
+        ),
+        h(
+          'div',
+          { className: 'dsg-settingsRow' },
+          h(
+            'div',
+            { className: 'dsg-settingsMain' },
+            h(
+              'div',
+              { className: 'dsg-settingsLabelRow' },
+              h('span', { className: 'dsg-settingsLabel' }, tr('settings.pricing')),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.pricingHint')),
+            h(
+              'div',
+              { className: 'dsg-priceModes', role: 'group', 'aria-label': tr('settings.pricing') },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-priceMode' + (priceMode === 'peak' ? ' active' : ''),
+                  'aria-pressed': priceMode === 'peak',
+                  onClick: () => setPriceMode('peak'),
+                },
+                tr('settings.peak'),
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsg-priceMode' + (priceMode === 'offPeak' ? ' active' : ''),
+                  'aria-pressed': priceMode === 'offPeak',
+                  onClick: () => setPriceMode('offPeak'),
+                },
+                tr('settings.offPeak'),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'dsg-priceGrid' },
+              [
+                ['input', tr('settings.priceInput')],
+                ['cacheRead', tr('settings.priceCacheRead')],
+                ['cacheWrite', tr('settings.priceCacheWrite')],
+                ['output', tr('settings.priceOutput')],
+              ].map(([key, fieldLabel]) => h(
+                'label',
+                { key, className: 'dsg-priceField' },
+                h('span', {}, fieldLabel),
+                h('input', {
+                  className: 'dsg-priceInput',
+                  type: 'number',
+                  min: '0',
+                  step: '0.001',
+                  inputMode: 'decimal',
+                  value: priceValues[priceMode]?.[key] ?? '',
+                  placeholder: '0.00',
+                  onChange: (event) => updatePrice(key, event.target.value),
+                  onBlur: () => commitPrice(key),
+                  onKeyDown: (event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  },
+                }),
+              )),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dsg-priceSave',
+                onClick: savePrices,
+              },
+              tr('settings.savePrices'),
+            ),
+            h(
+              'label',
+              { className: 'dsg-holidayField' },
+              h('span', {}, tr('settings.holidays')),
+              h('input', {
+                className: 'dsg-priceInput',
+                type: 'text',
+                value: holidayText,
+                placeholder: tr('settings.holidaysPlaceholder'),
+                onChange: (event) => setHolidayText(event.target.value),
+                onBlur: commitHolidays,
+                onKeyDown: (event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                },
+              }),
+            ),
+            h('div', { className: 'dsg-settingsHint' }, tr('settings.holidaysHint')),
+          ),
+        ),
+      );
     }
 
     function SessionRow(props) {
       const {
         sessionId,
         title,
+        blank,
+        menuOpen,
+        scheduleTasks,
         timeText,
         statuses,
         showStatus,
@@ -2129,12 +4472,23 @@ window.__ModuleLoader__.load({
         onRenameCancel,
         onTogglePin,
         onMenu,
+        onHoverStart,
+        onHoverEnd,
+        renderSlot,
         onDragStart,
         onDragOver,
         onDrop,
         onDragEnd,
       } = props;
+      const tr = typeof t === 'function' ? t : translate;
       const blockDragRef = React.useRef(false);
+      const rowRef = React.useRef(null);
+      const titleRef = React.useRef(null);
+      const marquee = useTitleMarquee(titleRef);
+      React.useEffect(() => {
+        if (menuOpen === true || rowRef.current?.matches(':hover')) marquee.enter();
+        else marquee.leave();
+      }, [menuOpen, marquee]);
       const blockDrag = () => {
         blockDragRef.current = true;
         window.setTimeout(() => {
@@ -2155,14 +4509,29 @@ window.__ModuleLoader__.load({
         'div',
         {
           className: classes.join(' '),
+          ref: rowRef,
           role: 'button',
           tabIndex: 0,
           draggable: canDrag === true,
           'data-session-id': sessionId,
-          title,
+          'aria-label': title,
           onClick: () => onOpen(sessionId),
+          onMouseEnter: (event) => onHoverStart?.(event, sessionId),
+          onMouseLeave: () => onHoverEnd?.(),
+          onPointerEnter: marquee.enter,
+          onPointerLeave: () => { if (menuOpen !== true) marquee.leave(); },
+          onContextMenu: (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu(event, sessionId);
+          },
           onKeyDown: (event) => {
             if (event.target !== event.currentTarget) return;
+            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              event.preventDefault();
+              onMenu(event, sessionId);
+              return;
+            }
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
               onOpen(sessionId);
@@ -2203,21 +4572,34 @@ window.__ModuleLoader__.load({
                 : h(IconSubagentGroup, { width: 14, height: 14 }),
             )
           : null,
-        showStatus
-          ? h(
-              'span',
-              {
-                className: 'dsg-statusSlot',
-                title: statuses.map((status) => status.label).join('，'),
-                'aria-label': statuses.map((status) => status.label).join('，'),
-              },
-              h(StateDot, { state: statuses[0].state }),
-              statuses.map((status, index) => h(
+        !archived && !blank
+          ? showStatus
+            ? h(
                 'span',
-                { key: index, className: 'dsg-visuallyHidden' },
-                status.label,
-              )),
-            )
+                {
+                  className: 'dsg-statusSlot',
+                  title: statuses.map((status) => status.label).join('，'),
+                  'aria-label': statuses.map((status) => status.label).join('，'),
+                },
+                h(StateDot, { state: statuses[0].state }),
+                statuses.map((status, index) => h(
+                  'span',
+                  { key: index, className: 'dsg-visuallyHidden' },
+                  status.label,
+                )),
+              )
+            : Array.isArray(scheduleTasks) && scheduleTasks.length > 0
+              ? h(
+                  'span',
+                  {
+                    className: 'dsg-leadingSlot dsg-scheduleClock',
+                    title: tr('schedule.mark', { count: scheduleTasks.length }),
+                    'aria-label': tr('schedule.mark', { count: scheduleTasks.length }),
+                    onClick: (event) => event.stopPropagation(),
+                  },
+                  h(IconClock, { width: 14, height: 14 }),
+                )
+              : null
           : null,
         editing
           ? h(GroupNameEditor, {
@@ -2229,6 +4611,7 @@ window.__ModuleLoader__.load({
               'span',
               {
                 className: 'dsg-titleText',
+                ref: titleRef,
                 onDoubleClick: (event) => {
                   event.stopPropagation();
                   if (onRenameStart) onRenameStart();
@@ -2237,6 +4620,9 @@ window.__ModuleLoader__.load({
               title,
             ),
         h('span', { className: 'dsg-time' }, timeText),
+        typeof renderSlot === 'function'
+          ? h('span', { className: 'dsg-rowTrailing' }, renderSlot('sidebar.session.row.trailing', { sessionId }))
+          : null,
         h(
           'button',
           {
@@ -2294,6 +4680,9 @@ window.__ModuleLoader__.load({
           },
           pinned ? h(IconPinFill, { width: 14, height: 14 }) : h(IconPinOutline, { width: 14, height: 14 }),
         ),
+        typeof renderSlot === 'function'
+          ? h('span', { className: 'dsg-rowExternalActions' }, renderSlot('sidebar.workspaces.session.row.action', { sessionId, displayTitle: title }))
+          : null,
       );
     }
 
@@ -2352,10 +4741,20 @@ window.__ModuleLoader__.load({
           onClick: onToggle,
           onKeyDown: (event) => {
             if (event.target !== event.currentTarget) return;
+            if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+              event.preventDefault();
+              onMenu(event);
+              return;
+            }
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
               onToggle();
             }
+          },
+          onContextMenu: (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onMenu(event);
           },
           onDragOver,
           onDrop,
@@ -2397,7 +4796,14 @@ window.__ModuleLoader__.load({
               onCommit: onEditCommit,
               onCancel: onEditCancel,
             })
-          : h('span', { className: 'dsg-groupName', title: group.name }, group.name),
+          : h('span', {
+              className: 'dsg-groupName',
+              title: group.name,
+              onDoubleClick: (event) => {
+                event.stopPropagation();
+                if (onEditStart) onEditStart();
+              },
+            }, group.name),
         h('span', { className: 'dsg-groupCount' }, tr('group.count', { n: count })),
         h(
           'span',
@@ -2950,12 +5356,82 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /* ── session hover card ───────────────────────────────────────── */
+
+    function SessionHoverCard({
+      sessionId,
+      title,
+      cwd,
+      timeText,
+      scheduleTasks,
+      now,
+      statuses,
+      archived,
+      renderSlot,
+      onMouseEnter,
+      onMouseLeave,
+      style,
+      tr,
+    }) {
+      return h(
+        'div',
+        {
+          className: 'dsg-hoverCard',
+          role: 'tooltip',
+          'data-session-id': sessionId,
+          style,
+          onMouseEnter,
+          onMouseLeave,
+        },
+        h('div', { className: 'dsg-hoverTitle' }, title),
+        cwd ? h('div', { className: 'dsg-hoverPath', title: cwd }, cwd) : null,
+        timeText ? h('div', { className: 'dsg-hoverTime' }, timeText) : null,
+        Array.isArray(scheduleTasks) && scheduleTasks.length > 0
+          ? h(
+              'div',
+              { className: 'dsg-hoverTasks' },
+              scheduleTasks.slice(0, 2).map((task) => h(
+                'div',
+                { className: 'dsg-hoverTask', key: task.id ?? `${task.title}:${task.scheduledAt}` },
+                h('span', { className: 'dsg-hoverTaskIcon' }, h(IconClock, { width: 13, height: 13 })),
+                h(
+                  'span',
+                  { className: 'dsg-hoverTaskBody' },
+                  h('span', { className: 'dsg-hoverTaskName' }, task.title || tr('schedule.untitled')),
+                  h('span', { className: 'dsg-hoverTaskTime' }, scheduleTimeText(task, now, tr)),
+                ),
+              )),
+              scheduleTasks.length > 2
+                ? h('div', { className: 'dsg-hoverTaskMore' }, tr('schedule.more', { count: scheduleTasks.length - 2 }))
+                : null,
+            )
+          : null,
+        typeof renderSlot === 'function'
+          ? renderSlot('sidebar.session.row.hover', { sessionId })
+          : null,
+        ...statuses.map((status) => h(
+          'div',
+          { className: 'dsg-hoverStatus', key: status.label },
+          h(StateDot, { state: status.state }),
+          h('span', {}, status.label),
+        )),
+        archived
+          ? h('div', { className: 'dsg-hoverStatus dsg-hoverArchived' },
+              h(IconArchive, { width: 14, height: 14 }),
+              h('span', {}, tr('session.archived')))
+          : null,
+      );
+    }
+
     /* ── browser ───────────────────────────────────────────────────── */
 
     function SessionGroupsBrowser(props) {
       const {
         wide,
         expandSidebar,
+        renderSlot,
+        scheduleCatalog,
+        useSectionScroller,
         useSessions,
         useWorkspaces,
         useSessionStatus,
@@ -2986,6 +5462,8 @@ window.__ModuleLoader__.load({
       const [editingWorkspace, setEditingWorkspace] = React.useState(null);
       const [editingSession, setEditingSession] = React.useState(null);
       const [menu, setMenu] = React.useState(null);
+      const [dataPanel, setDataPanel] = React.useState(null);
+      const [deleteDialog, setDeleteDialog] = React.useState(null);
       const [viewMenu, setViewMenu] = React.useState(null);
       const [notice, setNotice] = React.useState(null);
       const [colorEditor, setColorEditor] = React.useState(null);
@@ -3007,7 +5485,39 @@ window.__ModuleLoader__.load({
         ? useSessionStatus((state) => state)
         : null;
       const activePanelId = usePanelInfo((state) => state.activePanelId);
+      const sectionScroller = typeof useSectionScroller === 'function' ? useSectionScroller() : null;
+      const scheduleSnapshot = React.useSyncExternalStore(
+        scheduleCatalog && typeof scheduleCatalog.subscribe === 'function'
+          ? scheduleCatalog.subscribe
+          : noScheduleSubscribe,
+        scheduleCatalog && typeof scheduleCatalog.getSnapshot === 'function'
+          ? scheduleCatalog.getSnapshot
+          : getEmptyScheduleSnapshot,
+        getEmptyScheduleSnapshot,
+      );
       const now = useNow(60000);
+      const scheduleBySession = React.useMemo(() => {
+        const map = new Map();
+        for (const task of scheduleSnapshot.records ?? []) {
+          if (!task || task.status !== 'active') continue;
+          const ids = new Set(Array.isArray(task.involvedSessionIds) ? task.involvedSessionIds : []);
+          const targetId = scheduleTaskSessionId(task);
+          if (targetId) ids.add(targetId);
+          for (const sessionId of ids) {
+            const list = map.get(sessionId);
+            if (list) list.push(task);
+            else map.set(sessionId, [task]);
+          }
+        }
+        for (const list of map.values()) {
+          list.sort((left, right) => Date.parse(scheduleNextRun(left) ?? '') - Date.parse(scheduleNextRun(right) ?? ''));
+        }
+        return map;
+      }, [scheduleSnapshot]);
+      const [hoverCard, setHoverCard] = React.useState(null);
+      const hoverOpenTimerRef = React.useRef(null);
+      const hoverCloseTimerRef = React.useRef(null);
+      const hoverShownRef = React.useRef(false);
 
       const tr = React.useCallback(
         (key, params) => {
@@ -3324,6 +5834,83 @@ window.__ModuleLoader__.load({
           if (bridgeSnapshotProvider === provider) bridgeSnapshotProvider = null;
         };
       }, [archivedSessionIds, list, workspaces]);
+
+      const groupSessionIds = (workspaceId, groupId) => {
+        const groups = prefs.groups?.[workspaceId] ?? [];
+        const byId = new Map(groups.map((group) => [group.id, group]));
+        const ids = [];
+        const seen = new Set();
+        const walk = (id) => {
+          if (seen.has(id)) return;
+          seen.add(id);
+          const group = byId.get(id);
+          if (!group) return;
+          for (const sessionId of group.sessionIds ?? []) {
+            const key = `s:${sessionId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            ids.push(sessionId);
+          }
+          for (const child of groups) {
+            if (child.parentGroupId === id) walk(child.id);
+          }
+        };
+        walk(groupId);
+        return ids;
+      };
+
+      const workspaceSessionIds = (workspaceId) => {
+        const ids = [];
+        const seen = new Set();
+        const collect = (id) => {
+          if (seen.has(id)) return;
+          seen.add(id);
+          const workspace = workspaces.find((item) => item.workspaceId === id);
+          for (const sessionId of workspace?.sessionIds ?? []) {
+            if (seen.has(`s:${sessionId}`)) continue;
+            seen.add(`s:${sessionId}`);
+            ids.push(sessionId);
+          }
+          for (const child of workspaces) {
+            if (workspaceParents.get(child.workspaceId) === id) collect(child.workspaceId);
+          }
+        };
+        collect(workspaceId);
+        return ids;
+      };
+
+      const dataTitle = (kind, target) => {
+        if (kind === 'session') return titleOf(target);
+        if (kind === 'group') {
+          const group = (prefs.groups?.[target.workspaceId] ?? []).find((item) => item.id === target.groupId);
+          return group?.name || tr('data.group');
+        }
+        const workspace = workspaces.find((item) => item.workspaceId === target);
+        return workspace ? workspaceTitle(workspace) : tr('data.workspace');
+      };
+
+      const openDataPanel = (kind, sessionIds, target) => {
+        closeMenu();
+        setDataPanel({
+          key: `${kind}:${target?.sessionId ?? target?.groupId ?? target ?? ''}`,
+          kind,
+          title: `${tr(kind === 'session' ? 'data.title.session' : kind === 'group' ? 'data.title.group' : 'data.title.workspace')} · 「${dataTitle(kind, target)}」`,
+          sessionIds: [...new Set(sessionIds.filter((id) => typeof id === 'string' && id.length > 0))],
+        });
+      };
+
+      const openDeleteDialog = (sessionId, workspaceId) => {
+        closeMenu();
+        const row = list.byId?.[sessionId];
+        setDeleteDialog({
+          sessionId,
+          workspaceId,
+          title: titleOf(sessionId),
+          knownRunning: row?.running === true,
+          knownSubagents: subagentCatalogOf(sessionId).length,
+          currentSessionId,
+        });
+      };
 
       const sortScope = (previous, rootWorkspaceId, mode) => {
         const byId = new Map(workspaces.map((workspace) => [workspace.workspaceId, workspace]));
@@ -3763,10 +6350,108 @@ window.__ModuleLoader__.load({
         return [...ids];
       };
 
+      const canShowHoverCard = () => {
+        if (typeof window === 'undefined') return false;
+        try {
+          if (typeof window.matchMedia === 'function'
+            && window.matchMedia('(hover: hover)').matches === false) return false;
+        } catch {
+          /* older environments: keep the card available */
+        }
+        return true;
+      };
+
+      const clearHoverTimers = () => {
+        if (hoverOpenTimerRef.current !== null) {
+          window.clearTimeout(hoverOpenTimerRef.current);
+          hoverOpenTimerRef.current = null;
+        }
+        if (hoverCloseTimerRef.current !== null) {
+          window.clearTimeout(hoverCloseTimerRef.current);
+          hoverCloseTimerRef.current = null;
+        }
+      };
+
+      const dismissHoverCard = React.useCallback(() => {
+        clearHoverTimers();
+        hoverShownRef.current = false;
+        setHoverCard(null);
+      }, []);
+
+      React.useEffect(() => () => {
+        clearHoverTimers();
+      }, []);
+
+      React.useEffect(() => {
+        if (!hoverCard) return undefined;
+        const close = () => dismissHoverCard();
+        const scroller = rootRef.current?.querySelector?.('.dsg-scroll');
+        if (scroller) scroller.addEventListener('scroll', close, { passive: true });
+        window.addEventListener('resize', close);
+        return () => {
+          if (scroller) scroller.removeEventListener('scroll', close);
+          window.removeEventListener('resize', close);
+        };
+      }, [hoverCard, dismissHoverCard]);
+
+      React.useEffect(() => {
+        const onFollowup = (event) => {
+          const detail = event?.detail ?? {};
+          if (detail.kind === 'failed') {
+            notify(tr('notice.archiveFollowupFailed', { reason: detail.text || tr('notice.archiveFailedUnknown') }));
+          } else if (detail.kind === 'settled') {
+            notify(tr('notice.archiveFollowupSettled'), true);
+          }
+        };
+        window.addEventListener(ARCHIVE_EVENT, onFollowup);
+        return () => window.removeEventListener(ARCHIVE_EVENT, onFollowup);
+      }, []);
+
+      const scheduleHoverCard = (event, sessionId) => {
+        if (!canShowHoverCard() || dragRef.current || menu) return;
+        const target = event?.currentTarget;
+        if (!target || typeof target.getBoundingClientRect !== 'function') return;
+        const rect = target.getBoundingClientRect();
+        clearHoverTimers();
+        if (hoverCard?.sessionId === sessionId) return;
+        const delay = hoverShownRef.current ? 0 : 800;
+        hoverOpenTimerRef.current = window.setTimeout(() => {
+          hoverOpenTimerRef.current = null;
+          hoverShownRef.current = true;
+          setHoverCard({
+            sessionId,
+            rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+          });
+        }, delay);
+      };
+
+      const scheduleHoverClose = () => {
+        if (hoverOpenTimerRef.current !== null) {
+          window.clearTimeout(hoverOpenTimerRef.current);
+          hoverOpenTimerRef.current = null;
+        }
+        if (hoverCloseTimerRef.current !== null) {
+          window.clearTimeout(hoverCloseTimerRef.current);
+        }
+        hoverCloseTimerRef.current = window.setTimeout(() => {
+          hoverCloseTimerRef.current = null;
+          hoverShownRef.current = false;
+          setHoverCard(null);
+        }, 120);
+      };
+
+      const enterHoverCard = () => {
+        if (hoverCloseTimerRef.current !== null) {
+          window.clearTimeout(hoverCloseTimerRef.current);
+          hoverCloseTimerRef.current = null;
+        }
+      };
+
       const closeMenu = React.useCallback(() => {
+        dismissHoverCard();
         setMenu(null);
         setColorEditor(null);
-      }, []);
+      }, [dismissHoverCard]);
 
       const clearDrag = React.useCallback(() => {
         dragRef.current = null;
@@ -3775,6 +6460,7 @@ window.__ModuleLoader__.load({
       }, []);
 
       const handleDragStart = (event, sessionId, workspaceId, groupId) => {
+        dismissHoverCard();
         if (!workspaceId) {
           event.preventDefault();
           return;
@@ -4523,9 +7209,22 @@ window.__ModuleLoader__.load({
 
       const cancelWorkspaceRename = () => setEditingWorkspace(null);
 
-      const openWorkspaceMenu = (event, workspace) => {
-        event.stopPropagation();
+      const menuRectFor = (event) => {
+        if (event.type === 'contextmenu') {
+          return {
+            left: event.clientX,
+            top: event.clientY - 4,
+            bottom: event.clientY,
+          };
+        }
         const rect = event.currentTarget.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, bottom: rect.bottom };
+      };
+
+      const openWorkspaceMenu = (event, workspace) => {
+        dismissHoverCard();
+        event.stopPropagation();
+        const rect = menuRectFor(event);
         setMenu({
           kind: 'workspace',
           workspaceId: workspace.workspaceId,
@@ -4635,8 +7334,9 @@ window.__ModuleLoader__.load({
       };
 
       const openGroupMenu = (event, workspaceId, groupId) => {
+        dismissHoverCard();
         event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
+        const rect = menuRectFor(event);
         setColorEditor(null);
         setMenu({
           kind: 'group',
@@ -4647,8 +7347,9 @@ window.__ModuleLoader__.load({
       };
 
       const openSessionMenu = (event, workspaceId, groupId, sessionId) => {
+        dismissHoverCard();
         event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
+        const rect = menuRectFor(event);
         setMenu({
           kind: 'session',
           workspaceId,
@@ -5023,6 +7724,9 @@ window.__ModuleLoader__.load({
           key: sessionId,
           sessionId,
           title: titleOf(sessionId),
+          blank: row.blank === true,
+          menuOpen: menu?.kind === 'session' && menu.sessionId === sessionId,
+          scheduleTasks: scheduleBySession.get(sessionId) ?? [],
           timeText: row.blank
             ? ''
             : primaryStatus.trailingLabel ?? relativeTime(row.updatedAt, now, tr),
@@ -5041,7 +7745,10 @@ window.__ModuleLoader__.load({
           onToggleSubagents: options.onToggleSubagents,
           canDrag,
           t: tr,
-          onOpen: (id) => openSession(id),
+          onOpen: (id) => {
+            dismissHoverCard();
+            openSession(id);
+          },
           onRenameStart: () => beginSessionRename(sessionId),
           onRenameCommit: commitSessionRename,
           onRenameCancel: cancelSessionRename,
@@ -5049,6 +7756,9 @@ window.__ModuleLoader__.load({
           onArchive: (id) => handleArchive(id),
           onUnarchive: (id) => handleUnarchive(id),
           onMenu: (event, id) => openSessionMenu(event, workspaceId, groupId, id),
+          onHoverStart: (event, id) => scheduleHoverCard(event, id),
+          onHoverEnd: scheduleHoverClose,
+          renderSlot,
           onDragStart: options.onDragStart ?? ((event, id) => handleDragStart(event, id, workspaceId, groupId)),
           onDragOver: options.onDragOver ?? (canDrag
             ? (event, id) => handleRowDragOver(event, workspaceId, groupId, id)
@@ -5426,10 +8136,20 @@ window.__ModuleLoader__.load({
               onClick: () => toggleWorkspace(workspace.workspaceId),
               onKeyDown: (event) => {
                 if (event.target !== event.currentTarget) return;
+                if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                  event.preventDefault();
+                  openWorkspaceMenu(event, workspace);
+                  return;
+                }
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   toggleWorkspace(workspace.workspaceId);
                 }
+              },
+              onContextMenu: (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openWorkspaceMenu(event, workspace);
               },
               onDragOver: (event) => handleWorkspaceDragOver(event, workspace.workspaceId),
               onDrop: (event) => handleWorkspaceDrop(event, workspace.workspaceId),
@@ -5468,7 +8188,7 @@ window.__ModuleLoader__.load({
                   onCommit: commitWorkspaceRename,
                   onCancel: cancelWorkspaceRename,
                 })
-              : h('span', { className: 'dsg-wsName' }, workspaceTitle(workspace)),
+              : h('span', { className: 'dsg-wsName', title: workspace.path || workspaceTitle(workspace) }, workspaceTitle(workspace)),
             h(
               'span',
               { className: 'dsg-wsActions' },
@@ -5641,6 +8361,42 @@ window.__ModuleLoader__.load({
         );
       };
 
+      const renderHoverCard = () => {
+        if (!hoverCard) return null;
+        const { sessionId, rect } = hoverCard;
+        const row = list.byId?.[sessionId] ?? {};
+        const { statuses, primaryStatus } = statusInfoFor(sessionId);
+        const timeText = row.blank
+          ? ''
+          : primaryStatus.trailingLabel ?? relativeTime(row.updatedAt, now, tr);
+        const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const width = 244;
+        let left = rect.right + 8;
+        if (left + width > viewportWidth - 8) {
+          left = Math.max(8, rect.left - width - 8);
+        }
+        const top = Math.max(8, Math.min(rect.top, viewportHeight - 320));
+        return h(SessionHoverCard, {
+          key: sessionId,
+          sessionId,
+          title: titleOf(sessionId),
+          cwd: row.cwd ?? workspaces.find((workspace) => (workspace.sessionIds ?? []).includes(sessionId))?.path,
+          timeText,
+          scheduleTasks: scheduleBySession.get(sessionId) ?? [],
+          now,
+          statuses: archivedSessionIds.has(sessionId)
+            ? statuses.filter((status) => status.state !== 'done' && status.state !== 'idle')
+            : statuses,
+          archived: archivedSessionIds.has(sessionId),
+          renderSlot,
+          onMouseEnter: enterHoverCard,
+          onMouseLeave: scheduleHoverClose,
+          style: { left, top, width },
+          tr,
+        });
+      };
+
       const renderMenu = () => {
         if (!menu) return null;
         if (menu.kind === 'group') {
@@ -5781,23 +8537,30 @@ window.__ModuleLoader__.load({
                 })
               : null,
             targetGroups.length > 0
-              ? h('div', { className: 'dsg-menuLabelText' }, tr('group.moveLabel'))
-              : null,
-            targetGroups.length > 0
-              ? h(
-                  'div',
-                  { className: 'dsg-menuScroll' },
-                  targetGroups.map((target) => h(MenuItem, {
+              ? h(SubmenuItem, {
+                  icon: h(IconGroupMove),
+                  label: tr('group.moveLabel'),
+                  items: targetGroups.map((target) => ({
                     key: target.id,
                     icon: h('span', {
-                      className: 'dsg-groupDot',
+                      className: 'dsg-groupSwatch',
                       style: groupColorVars(target.color),
                     }),
                     label: tr('group.moveToGroup', { name: target.name }),
                     onClick: () => handleMoveGroupToGroup(menu.workspaceId, menu.groupId, target.id),
                   })),
-                )
+                })
               : null,
+            h('div', { className: 'dsg-menuSeparator' }),
+            h(MenuItem, {
+              icon: h(IconData),
+              label: tr('data.open'),
+              onClick: () => openDataPanel(
+                'group',
+                groupSessionIds(menu.workspaceId, menu.groupId),
+                { workspaceId: menu.workspaceId, groupId: menu.groupId },
+              ),
+            }),
             h('div', { className: 'dsg-menuSeparator' }),
             h(MenuItem, {
               icon: h(IconUngroup),
@@ -5825,6 +8588,15 @@ window.__ModuleLoader__.load({
             }),
             h('div', { className: 'dsg-menuSeparator' }),
             h(MenuItem, {
+              icon: h(IconData),
+              label: tr('data.open'),
+              onClick: () => openDataPanel(
+                'workspace',
+                workspaceSessionIds(workspace.workspaceId),
+                workspace.workspaceId,
+              ),
+            }),
+            h(MenuItem, {
               icon: h(IconEdit),
               label: tr('workspace.rename'),
               onClick: () => beginWorkspaceRename(workspace),
@@ -5843,6 +8615,18 @@ window.__ModuleLoader__.load({
         const pinned = pinnedSessionIds.has(menu.sessionId);
         const archived = archivedSessionIds.has(menu.sessionId);
         const blank = list.byId?.[menu.sessionId]?.blank === true;
+        let externalSessionMenu = null;
+        if (typeof renderSlot === 'function') {
+          try {
+            externalSessionMenu = renderSlot(
+              'sidebar.workspaces.session.menu.item',
+              { sessionId: menu.sessionId, displayTitle: titleOf(menu.sessionId) },
+              { hookContext: [true, (open) => { if (!open) closeMenu(); }] },
+            );
+          } catch {
+            externalSessionMenu = null;
+          }
+        }
         return h(
           InlineMenu,
           { rect: menu.rect, onClose: closeMenu },
@@ -5876,10 +8660,24 @@ window.__ModuleLoader__.load({
             label: tr('session.copyId'),
             onClick: () => handleCopyId(menu.sessionId),
           }),
+          externalSessionMenu,
+          h(MenuItem, {
+            icon: h(IconData),
+            label: tr('data.open'),
+            onClick: () => openDataPanel('session', [menu.sessionId], menu.sessionId),
+          }),
+          h('div', { className: 'dsg-menuSeparator' }),
+          h(MenuItem, {
+            icon: h(IconTrash),
+            label: menu.sessionId === currentSessionId ? tr('delete.current') : tr('session.delete'),
+            danger: true,
+            disabled: menu.sessionId === currentSessionId,
+            onClick: () => openDeleteDialog(menu.sessionId, menu.workspaceId),
+          }),
           h('div', { className: 'dsg-menuSeparator' }),
           menu.workspaceId
             ? h(MenuItem, {
-                icon: h(IconGroup),
+                icon: h(IconGroupAdd),
                 label: tr('session.newGroup'),
                 onClick: () => handleCreateGroupForSession(menu.workspaceId, menu.sessionId),
               })
@@ -5894,17 +8692,54 @@ window.__ModuleLoader__.load({
           otherGroups.length > 0
             ? h('div', { className: 'dsg-menuSeparator' })
             : null,
-          ...otherGroups.map((group) => h(MenuItem, {
-            key: group.id,
-            icon: h('span', {
-              className: 'dsg-groupDot',
-              style: groupColorVars(group.color),
-            }),
-            label: tr('session.moveToGroup', { name: group.name }),
-            onClick: () => handleMoveToGroup(menu.workspaceId, group.id, menu.sessionId),
-          })),
+          otherGroups.length > 0
+            ? h(SubmenuItem, {
+                icon: h(IconGroupMove),
+                label: tr('group.moveLabel'),
+                items: otherGroups.map((group) => ({
+                  key: group.id,
+                  icon: h('span', {
+                    className: 'dsg-groupSwatch',
+                    style: groupColorVars(group.color),
+                  }),
+                  label: tr('session.moveToGroup', { name: group.name }),
+                  onClick: () => handleMoveToGroup(menu.workspaceId, group.id, menu.sessionId),
+                })),
+              })
+            : null,
         );
       };
+
+      const renderDeleteDialog = () => deleteDialog
+        ? h(DeleteSessionDialog, {
+            sessionId: deleteDialog.sessionId,
+            title: deleteDialog.title,
+            knownRunning: deleteDialog.knownRunning,
+            knownSubagents: deleteDialog.knownSubagents,
+            currentSessionId: deleteDialog.currentSessionId,
+            tr,
+            onClose: () => setDeleteDialog(null),
+            onDeleted: () => {
+              const { sessionId, workspaceId } = deleteDialog;
+              setDeleteDialog(null);
+              setPrefs((previous) => removeSessionFromGroups(previous, workspaceId, sessionId));
+              notify(tr('delete.done'), true);
+            },
+          })
+        : null;
+
+      const renderDataPanel = () => dataPanel
+        ? h(DataPanel, {
+            key: dataPanel.key,
+            kind: dataPanel.kind,
+            title: dataPanel.title,
+            sessionIds: dataPanel.sessionIds,
+            pricing: prefs.pricing,
+            useSessions,
+            tr,
+            onClose: () => setDataPanel(null),
+          })
+        : null;
 
       const renderViewMenu = () => {
         if (!viewMenu) return null;
@@ -6033,7 +8868,10 @@ window.__ModuleLoader__.load({
           renderHeader(),
           h(
             'div',
-            { className: 'dsg-scroll' },
+            {
+              className: 'dsg-scroll',
+              ref: sectionScroller?.bindScrollerRef,
+            },
             phase === 'pending' && sections.length === 0
               ? h('div', { className: 'dsg-empty' }, tr('section.loading'))
               : sections.length === 0
@@ -6059,6 +8897,9 @@ window.__ModuleLoader__.load({
                   : treeLayout.roots.map((section) => renderWorkspace(section, 0)),
           ),
         ),
+        renderDeleteDialog(),
+        renderDataPanel(),
+        renderHoverCard(),
         renderMenu(),
         renderViewMenu(),
         renderAddWorkspaceDialog(),
@@ -6116,7 +8957,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'locale', 'uiWorkspace', 'workspaces', 'sessions'],
+      inject: ['slots', 'locale', 'remote', 'remote.schedule', 'remoteAccess', 'uiWorkspace', 'workspaces', 'sessions'],
       apply(ctx) {
         if (reloadStaleBootPage()) return;
         ctx.effect(
@@ -6127,10 +8968,44 @@ window.__ModuleLoader__.load({
           () => startSessionGroupsBridge(),
           'session-groups: agent tool bridge',
         );
+        ctx.effect(() => {
+          if (typeof ctx.on !== 'function' || typeof window === 'undefined') return undefined;
+          const emit = (detail) => {
+            try { window.dispatchEvent(new CustomEvent(ARCHIVE_EVENT, { detail })); } catch { /* ignore */ }
+          };
+          const offFailed = ctx.on('workspace/archive-followup-failed', (sessionId, text) => {
+            emit({ kind: 'failed', sessionId, text: String(text ?? '') });
+          });
+          const offSettled = ctx.on('workspace/archive-followup-settled', (sessionId) => {
+            emit({ kind: 'settled', sessionId });
+          });
+          return () => {
+            try { offFailed?.(); } catch { /* ignore */ }
+            try { offSettled?.(); } catch { /* ignore */ }
+          };
+        }, 'session-groups: archive follow-up bridge');
+
+        const settingsT = ctx.locale.bind(NS);
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'session-groups',
+          order: 80,
+          label: () => settingsT('settings.nav'),
+          locale: NS,
+        }, SessionGroupsSettings));
 
         const modeStore = createViewModeStore();
+        const scheduleCatalog = createScheduleCatalogSource(ctx);
+        ctx.effect(() => {
+          const access = ctx.remoteAccess;
+          if (access && typeof access.whenAccess === 'function') {
+            return access.whenAccess('schedule/catalog', () => scheduleCatalog.start());
+          }
+          return scheduleCatalog.start();
+        }, 'session-groups: scheduled task catalog');
 
         const injected = () => ({
+          scheduleCatalog,
           setGroupedMode: (next) => modeStore.set(next),
           openSession: (sessionId) => ctx.uiWorkspace.openSession(sessionId),
           startSession: (workspaceId) => ctx.uiWorkspace.startSession(workspaceId),
