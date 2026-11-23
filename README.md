@@ -13,7 +13,7 @@
   <br>
   数据面板已拆为可选扩展 <code>dsh-session-groups-data</code>。
   <br><br>
-  <code>v0.7.1</code> · DSH Web / Desktop Plugin · MIT
+  <code>v0.7.2</code> · DSH Web / Desktop Plugin · MIT
 </p>
 
 
@@ -393,7 +393,7 @@ dsh plugin install "$PWD/dsh-session-groups"
 
 ### 安装数据面板扩展
 
-核心插件不再包含数据面板。需要 Token / 上下文 / 模型 / 文件 / 费用 / 工具统计时，再安装：
+核心插件不再包含数据面板。需要 Token / 上下文 / 模型 / 文件 / 费用 / 工具统计时，再安装数据扩展 `>=0.1.1`：
 
 ```bash
 dsh plugin install https://github.com/xyzYaeMiko/dsh-session-groups-data
@@ -420,6 +420,13 @@ dsh plugin install https://github.com/xyzYaeMiko/dsh-session-groups-data
 > 清除浏览器站点数据会丢失分组。分组状态不会上传到任何服务器。
 
 ## 版本历史
+
+### v0.7.2
+
+- 修复 v0.7.1 发布的核心 `client.js` 未包含 `sessionGroupsUI` 协议的问题
+- 核心与数据扩展 `0.1.1` 重新对齐；数据扩展菜单可正常出现
+- 同步最新数据面板截图、中文说明和核心文档
+- 数据扩展要求核心 `>=0.7.2`
 
 ### v0.7.1
 

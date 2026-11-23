@@ -35,5 +35,5 @@ DSH 官方仓库的「发现」页默认不带任何索引源；社区插件库�
 
 - GitHub 仓库添加 topic：`dsh-plugin`
 - 确认 `README.md`、`package.json`、`client.js`、`docs/` 已是最新
-- 补全 Release `v0.7.1` 的更新说明（见 `release-notes-v0.7.1.md`）
+- 补全 Release `v0.7.2` 的更新说明（见 `release-notes-v0.7.2.md`）
 - 可选的 npm 发布：不影响收录；若发布，`repository` 字段需指回本仓库
