@@ -104,9 +104,10 @@ window.__ModuleLoader__.load({
     const BRIDGE_TOKEN_HEADER = 'x-dsh-session-groups-token';
     const BRIDGE_PATH = '/dsh-session-groups-bridge';
     const LIVE_DATA_TTL_MS = 15000;
-    const liveDataCache = new Map();
     let bridgeSnapshotProvider = null;
     let runningLightPreference = true;
+    const noDataProviderSubscribe = () => () => {};
+    const getNullDataProvider = () => null;
     function groupColorVars(color) {
       return {
         '--dsg-group-color-light': color,
@@ -934,108 +935,6 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function projectionOf(list, sessionId, key) {
-      const values = list?.projectionsBySession?.[sessionId]?.values
-        ?? list?.byId?.[sessionId]?.projectionValues
-        ?? {};
-      return values[key];
-    }
-
-    function usageSummary(usage) {
-      const input = Number(usage?.uncachedInputTokens ?? usage?.inputTokens ?? 0) || 0;
-      const cacheRead = Number(usage?.cacheReadTokens ?? 0) || 0;
-      const cacheWrite = Number(usage?.cacheWriteTokens ?? 0) || 0;
-      const output = Number(usage?.outputTokens ?? 0) || 0;
-      const reasoning = Number(usage?.reasoningTokens ?? 0) || 0;
-      const total = input + cacheRead + cacheWrite + output;
-      const cacheBase = input + cacheRead + cacheWrite;
-      return {
-        input,
-        cacheRead,
-        cacheWrite,
-        output,
-        reasoning,
-        total,
-        cacheRate: cacheBase > 0 ? cacheRead / cacheBase : 0,
-      };
-    }
-
-    function periodUsage(bucket) {
-      return usageSummary({
-        uncachedInputTokens: bucket?.input,
-        cacheReadTokens: bucket?.cacheRead,
-        cacheWriteTokens: bucket?.cacheWrite,
-        outputTokens: bucket?.output,
-      });
-    }
-
-    function rateConfigured(rate) {
-      return Boolean(rate && Number.isFinite(rate.input) && Number.isFinite(rate.output));
-    }
-
-    function pricingConfigured(pricing) {
-      return rateConfigured(pricing?.peak) || rateConfigured(pricing?.offPeak);
-    }
-
-    function costOfUsage(usage, rates) {
-      if (!rateConfigured(rates)) return null;
-      const inputPrice = Number(rates.input) || 0;
-      const cacheReadPrice = Number(rates.cacheRead) || 0;
-      const cacheWritePrice = Number(rates.cacheWrite) || 0;
-      const outputPrice = Number(rates.output) || 0;
-      return (
-        usage.input / 1e6 * inputPrice
-        + usage.cacheRead / 1e6 * cacheReadPrice
-        + usage.cacheWrite / 1e6 * cacheWritePrice
-        + usage.output / 1e6 * outputPrice
-      );
-    }
-
-    function deepSeekPeakAt(time, holidays = []) {
-      const local = new Date((Number(time) || Date.now()) + 8 * 60 * 60 * 1000);
-      const day = local.getUTCDay();
-      const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
-      const dateKey = `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}-${String(local.getUTCDate()).padStart(2, '0')}`;
-      if (day === 0 || day === 6 || holidays.includes(dateKey)) return false;
-      return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
-    }
-
-    function costOfPeriods(periods, pricing) {
-      let total = 0;
-      let any = false;
-      for (const [key, rates] of [['peak', pricing?.peak], ['offPeak', pricing?.offPeak]]) {
-        const usage = periods?.[key];
-        if (!usage || usage.total <= 0) continue;
-        const cost = costOfUsage(usage, rates);
-        if (cost === null) return null;
-        total += cost;
-        any = true;
-      }
-      return any ? total : (pricingConfigured(pricing) ? 0 : null);
-    }
-
-    function formatCompactNumber(value) {
-      const n = Number(value);
-      if (!Number.isFinite(n)) return '—';
-      if (n >= 1e9) return `${(n / 1e9).toFixed(1).replace(/\.0$/, '')}B`;
-      if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
-      if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}k`;
-      return String(Math.round(n));
-    }
-
-    function formatCost(value) {
-      if (value === null || !Number.isFinite(value)) return '—';
-      if (value > 0 && value < 0.0001) return '~<¥0.0001';
-      return `~¥${value.toFixed(value < 0.01 ? 4 : 2)}`;
-    }
-
-    function contextRateOf(pressure) {
-      const used = Number(pressure?.pressureTokens ?? pressure?.projectedTokens);
-      const window = Number(pressure?.contextWindow);
-      if (!Number.isFinite(used) || !Number.isFinite(window) || window <= 0) return null;
-      return { used, window, rate: Math.max(0, Math.min(1, used / window)) };
-    }
-
     async function resolveBridgeAuth() {
       const injected = window[BRIDGE_GLOBAL];
       const path = injected && typeof injected.path === 'string' ? injected.path : BRIDGE_PATH;
@@ -1051,62 +950,6 @@ window.__ModuleLoader__.load({
         /* fall back to the boot-time token; the Host may predate /config */
       }
       return injected && typeof injected.token === 'string' ? injected : null;
-    }
-
-    async function fetchLiveSessionData(sessionIds, force = false, holidays = []) {
-      const result = new Map();
-      const ids = [...new Set((sessionIds ?? []).filter((id) => typeof id === 'string' && id.length > 0))];
-      if (ids.length === 0) return { rows: result, bridge: true, failed: false };
-      const holidayKey = [...new Set((holidays ?? []).filter((day) => typeof day === 'string'))].sort().join(',');
-      const bridge = await resolveBridgeAuth();
-      if (!bridge) return { rows: result, bridge: false, failed: true };
-      let failed = false;
-      const now = Date.now();
-      const missing = ids.filter((id) => {
-        const cached = liveDataCache.get(id);
-        return force || !cached || cached.holidayKey !== holidayKey || now - cached.at > LIVE_DATA_TTL_MS;
-      });
-      for (const chunkStart of Array.from({ length: Math.ceil(missing.length / 100) }, (_, i) => i * 100)) {
-        const chunk = missing.slice(chunkStart, chunkStart + 100);
-        try {
-          const response = await fetch(`${bridge.path}/data`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              [BRIDGE_TOKEN_HEADER]: bridge.token,
-            },
-            body: JSON.stringify({ sessionIds: chunk, holidays }),
-          });
-          if (!response.ok) {
-            failed = true;
-            for (const id of chunk) {
-              liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false, error: 'Host 数据接口返回错误' } });
-            }
-            continue;
-          }
-          const payload = await response.json();
-          const rows = Array.isArray(payload?.sessions) ? payload.sessions : [];
-          const seen = new Set();
-          for (const row of rows) {
-            if (!row || typeof row.id !== 'string') continue;
-            seen.add(row.id);
-            liveDataCache.set(row.id, { at: Date.now(), holidayKey, data: row });
-          }
-          for (const id of chunk) {
-            if (!seen.has(id)) liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false } });
-          }
-        } catch {
-          failed = true;
-          for (const id of chunk) {
-            liveDataCache.set(id, { at: Date.now(), holidayKey, data: { id, live: false, error: 'Host 数据请求失败' } });
-          }
-        }
-      }
-      for (const id of ids) {
-        const cached = liveDataCache.get(id);
-        if (cached) result.set(id, cached.data);
-      }
-      return { rows: result, bridge: true, failed };
     }
 
     async function requestSessionDelete(payload) {
@@ -2826,96 +2669,7 @@ window.__ModuleLoader__.load({
       .dsg-deleteButton.danger:hover:not(:disabled){filter:brightness(1.06);background:var(--dsw-alias-state-error-primary)}
       .dsg-deleteButton:disabled{opacity:.45;cursor:default}
       .dsg-deleteButton:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
-      .dsg-dataOverlay{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;background:rgb(0 0 0 / .22)}
-      .dsg-dataPanel{display:flex;flex-direction:column;width:min(540px,100%);max-height:min(760px,calc(100vh - 48px));overflow:hidden;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 50px rgb(0 0 0 / .24)}
-      .dsg-statList{display:flex;flex-direction:column}
-      .dsg-statRow{border-bottom:1px solid var(--dsw-alias-border-l1)}
-      .dsg-statRow:first-child{border-top:1px solid var(--dsw-alias-border-l1)}
-      .dsg-statHeader{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;padding:10px 2px;border:none;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-      .dsg-statHeader:hover{background:var(--dsw-alias-interactive-bg-hover)}
-      .dsg-statHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px;border-radius:5px}
-      .dsg-statIcon{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-tertiary)}
-      .dsg-statIcon svg{width:14px;height:14px}
-      .dsg-statLabel{width:58px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:18px;white-space:nowrap}
-      .dsg-statAgg{flex:none;margin-left:-5px;padding:0 4px;border:1px solid var(--dsw-alias-border-l1);border-radius:3px;color:var(--dsw-alias-label-tertiary);font-size:9px;line-height:14px;white-space:nowrap}
-      .dsg-statValue{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex:1;min-width:0;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .dsg-statChevron{width:12px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;text-align:center}
-      .dsg-statBody{padding:0 2px 10px 74px}
-      .dsg-statBar{display:flex;width:100%;height:5px;gap:1px;margin:2px 0 9px;border-radius:999px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}
-      .dsg-statSegment{min-width:2px;height:100%;flex:none;border-radius:1px}
-      .dsg-segInput{background:var(--dsw-static-blue-450,#4d6bfe)}
-      .dsg-segCacheRead{background:var(--dsw-static-neutral-bluish-400,#94a3b8)}
-      .dsg-segCacheWrite{background:#a78bfa}
-      .dsg-segOutput{background:var(--dsw-alias-state-success-primary)}
-      .dsg-segSystem{background:var(--dsw-static-neutral-bluish-400,#94a3b8)}
-      .dsg-segTools{background:#a78bfa}
-      .dsg-segMessages{background:var(--dsw-static-blue-450,#4d6bfe)}
-      .dsg-segRemaining{background:var(--dsw-alias-border-l2)}
-      .dsg-segPeak{background:var(--dsw-alias-state-warn-primary)}
-      .dsg-segOffPeak{background:var(--dsw-alias-state-success-primary)}
-      .dsg-segModel0{background:#4d6bfe}
-      .dsg-segModel1{background:#a78bfa}
-      .dsg-segModel2{background:#2fa24c}
-      .dsg-segModel3{background:#e0a23f}
-      .dsg-segModel4{background:#e06c9f}
-      .dsg-statDetails{display:flex;flex-direction:column;margin:6px 0 0;padding:0}
-      .dsg-statDetail{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-      .dsg-statDetail:last-child{border-bottom:none}
-      .dsg-statDetail dt{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
-      .dsg-statDetailLabel{display:inline-flex;align-items:center;gap:6px}
-      .dsg-statSwatch{display:inline-block;width:8px;height:8px;flex:none;border-radius:2px}
-      .dsg-statDetail dd{margin:0;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;text-align:right}
-      .dsg-contextRing{flex:none;overflow:visible}
-      .dsg-contextRingTrack{fill:none;stroke:var(--dsw-alias-border-l3);stroke-width:2px}
-      .dsg-contextRingFill{fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:2px;stroke-linecap:round}
-      @media(max-width:520px){.dsg-statLabel{width:46px}.dsg-statBody{padding-left:78px}.dsg-dataPanel{width:100%}}
 
-      .dsg-dataHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 18px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
-      .dsg-dataHeading{min-width:0}
-      .dsg-dataTitle{font-size:15px;line-height:22px;font-weight:600;overflow-wrap:anywhere}
-      .dsg-dataMeta{margin-top:3px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;overflow-wrap:anywhere}
-      .dsg-dataHeaderActions{display:flex;align-items:center;gap:4px;flex:none}
-      .dsg-dataRefresh,.dsg-dataClose{width:26px;height:26px;padding:0;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:16px;line-height:26px;cursor:pointer}
-      .dsg-dataRefresh:hover,.dsg-dataClose:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-      .dsg-dataRefresh:disabled{opacity:.5;cursor:default}
-      .dsg-dataRefresh:focus-visible,.dsg-dataClose:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
-      .dsg-dataBody{padding:14px 18px 6px;overflow:auto}
-      .dsg-dataCards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-      .dsg-dataCard{padding:9px 10px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-2);min-width:0}
-      .dsg-dataCardLabel{color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:15px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-      .dsg-dataCardValue{margin-top:3px;color:var(--dsw-alias-label-primary);font-size:16px;line-height:22px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
-      .dsg-dataHint{margin:10px 0 0;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:17px}
-      .dsg-dataSection{margin-top:8px;border-top:1px solid var(--dsw-alias-border-l1)}
-      .dsg-dataSectionHeader{display:flex;align-items:center;gap:6px;width:100%;padding:9px 0 5px;border:none;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
-      .dsg-dataSectionHeader:hover .dsg-dataSectionTitle{color:var(--dsw-alias-label-primary)}
-      .dsg-dataSectionHeader:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;border-radius:4px}
-      .dsg-dataSectionChevron{width:12px;flex:none;color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:16px;text-align:center}
-      .dsg-dataSectionTitle{display:flex;align-items:baseline;gap:8px;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px;font-weight:600}
-      .dsg-dataSectionSub{color:var(--dsw-alias-label-tertiary);font-size:10.5px;font-weight:400}
-      .dsg-dataSectionBody{padding:0 0 9px 18px}
-      .dsg-dataCostHead,.dsg-dataCostRow{display:grid;grid-template-columns:1fr 62px 72px 64px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-      .dsg-dataCostHead{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px}
-      .dsg-dataCostLabel{display:inline-flex;align-items:center;gap:6px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
-      .dsg-dataCostTokens,.dsg-dataCostPrice,.dsg-dataCostAmount{text-align:right;color:var(--dsw-alias-label-secondary);font-size:10.5px;line-height:16px;font-variant-numeric:tabular-nums}
-      .dsg-dataCostTotal{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:6px;color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600}
-      .dsg-dataCostPeriod{margin-top:8px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l1)}
-      .dsg-dataCostPeriodTitle{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--dsw-alias-label-primary);font-size:11px;line-height:16px;font-weight:600;margin-bottom:3px}
-      .dsg-dataToolModes{display:flex;align-items:center;gap:3px;margin:1px 0 5px;padding:2px;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-2);width:fit-content}
-      .dsg-dataToolMode{height:22px;padding:0 8px;border:none;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);font:inherit;font-size:10.5px;line-height:22px;cursor:pointer;white-space:nowrap}
-      .dsg-dataToolMode:hover{color:var(--dsw-alias-label-primary)}
-      .dsg-dataToolMode.active{background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 1px 2px rgb(0 0 0 / .08)}
-      .dsg-dataToolMode:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
-      .dsg-dataBreakdown{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-top:7px}
-      .dsg-dataBreakdownRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-      .dsg-dataBreakdownLabel{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}
-      .dsg-dataBreakdownValue{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;font-variant-numeric:tabular-nums}
-      .dsg-dataTools{max-height:224px;overflow:auto;margin-top:4px;overscroll-behavior:contain;scrollbar-width:thin}
-      .dsg-dataToolRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-      .dsg-dataToolName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}
-      .dsg-dataToolMuted{color:var(--dsw-alias-label-tertiary)}
-      .dsg-dataToolStats{flex:none;color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:16px;font-variant-numeric:tabular-nums}
-      .dsg-dataFooter{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 18px;border-top:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-tertiary);font-size:10.5px;line-height:16px}
-      @media(max-width:520px){.dsg-dataCards,.dsg-dataBreakdown{grid-template-columns:1fr 1fr}.dsg-dataOverlay{padding:12px}.dsg-priceGrid{grid-template-columns:1fr 1fr}}
     `;
 
     /* ── shared small components ──────────────────────────────────── */
@@ -3228,836 +2982,6 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function formatExactNumber(value) {
-      const n = Number(value);
-      if (!Number.isFinite(n)) return '—';
-      return Math.round(n).toLocaleString('en-US');
-    }
-
-    function formatDurationMs(value) {
-      const n = Number(value);
-      if (!Number.isFinite(n) || n <= 0) return '—';
-      const seconds = n / 1000;
-      if (seconds < 60) return `${(Math.round(seconds * 10) / 10).toFixed(1)}s`;
-      const whole = Math.round(seconds);
-      return `${Math.floor(whole / 60)}m ${whole % 60}s`;
-    }
-
-    function formatPercent(value) {
-      const n = Number(value);
-      if (!Number.isFinite(n) || n < 0) return '—';
-      const percent = n * 100;
-      return `${percent >= 10 ? Math.round(percent) : Math.round(percent * 10) / 10}%`;
-    }
-
-    function formatBytes(value) {
-      const n = Number(value);
-      if (!Number.isFinite(n) || n < 0) return '—';
-      if (n < 1024) return `${Math.round(n)} B`;
-      const units = ['KB', 'MB', 'GB', 'TB'];
-      let size = n / 1024;
-      let unit = 0;
-      while (size >= 1024 && unit < units.length - 1) {
-        size /= 1024;
-        unit += 1;
-      }
-      return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unit]}`;
-    }
-
-    function formatTps(value) {
-      const n = Number(value);
-      if (!Number.isFinite(n) || n <= 0) return '—';
-      return `${n >= 100 ? n.toFixed(0) : n.toFixed(1)} tok/s`;
-    }
-
-    function StatBar({ parts }) {
-      const visible = parts.filter((part) => Number(part.value) > 0);
-      const total = visible.reduce((sum, part) => sum + Number(part.value), 0);
-      if (total <= 0) return null;
-      return h(
-        'div',
-        { className: 'dsg-statBar', 'aria-hidden': 'true' },
-        visible.map((part) => h('span', {
-          key: part.key,
-          className: `dsg-statSegment ${part.className}`,
-          style: { width: `${Number(part.value) / total * 100}%` },
-        })),
-      );
-    }
-
-    function StatRow({ label, value, aggregation, icon: rowIcon, open, onToggle, children }) {
-      return h(
-        'div',
-        { className: 'dsg-statRow' },
-        h(
-          'button',
-          {
-            type: 'button',
-            className: 'dsg-statHeader',
-            'aria-expanded': open,
-            onClick: onToggle,
-          },
-          h('span', { className: 'dsg-statIcon', 'aria-hidden': 'true' }, rowIcon ? h(rowIcon, { width: 14, height: 14 }) : null),
-          h('span', { className: 'dsg-statLabel' }, label),
-          aggregation ? h('span', { className: 'dsg-statAgg' }, aggregation) : null,
-          h('span', { className: 'dsg-statValue' }, value),
-          h('span', { className: 'dsg-statChevron', 'aria-hidden': 'true' }, open ? '▾' : '▸'),
-        ),
-        open ? h('div', { className: 'dsg-statBody' }, children) : null,
-      );
-    }
-
-    function ContextRing({ rate }) {
-      const radius = 5.5;
-      const circumference = 2 * Math.PI * radius;
-      return h(
-        'svg',
-        { viewBox: '0 0 14 14', width: 14, height: 14, className: 'dsg-contextRing', 'aria-hidden': 'true' },
-        h('circle', { className: 'dsg-contextRingTrack', cx: 7, cy: 7, r: radius }),
-        h('circle', {
-          className: 'dsg-contextRingFill',
-          cx: 7,
-          cy: 7,
-          r: radius,
-          strokeDasharray: `${circumference * Math.max(0, Math.min(1, rate))} ${circumference}`,
-          transform: 'rotate(-90 7 7)',
-        }),
-      );
-    }
-
-    function DataPanel(props) {
-      const {
-        kind,
-        title,
-        sessionIds,
-        pricing,
-        useSessions,
-        tr,
-        onClose,
-      } = props;
-      const list = typeof useSessions === 'function'
-        ? useSessions((state) => state)
-        : { ids: [], byId: {}, projectionsBySession: {} };
-      const [live, setLive] = React.useState({});
-      const [hostStatus, setHostStatus] = React.useState('loading');
-      const [loading, setLoading] = React.useState(true);
-      const [revision, setRevision] = React.useState(0);
-      const [expanded, setExpanded] = React.useState({
-        activity: false,
-        usage: false,
-        context: false,
-        cost: false,
-        models: false,
-        storage: false,
-        tools: false,
-      });
-      const [toolsMode, setToolsMode] = React.useState('available');
-      const idsKey = sessionIds.join('|');
-      const holidayKey = (pricing?.holidays ?? []).join(',');
-
-      React.useEffect(() => {
-        let active = true;
-        setLoading(true);
-        setHostStatus('loading');
-        fetchLiveSessionData(sessionIds, revision > 0, pricing?.holidays ?? []).then(({ rows, bridge, failed }) => {
-          if (!active) return;
-          setLive(Object.fromEntries(rows));
-          setHostStatus(!bridge ? 'unavailable' : failed ? 'partial' : 'ok');
-        }).catch(() => {
-          if (active) setHostStatus('error');
-        }).finally(() => {
-          if (active) setLoading(false);
-        });
-        return () => {
-          active = false;
-        };
-      }, [idsKey, holidayKey, revision]);
-
-      React.useEffect(() => {
-        const onKeyDown = (event) => {
-          if (event.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-      }, [onClose]);
-
-      const rows = React.useMemo(() => sessionIds.map((sessionId) => {
-        const host = live[sessionId];
-        const rawUsage = projectionOf(list, sessionId, 'tokenUsage');
-        const hostUsage = host?.tokenUsage;
-        const rawPressure = projectionOf(list, sessionId, 'contextPressure');
-        const rawStats = projectionOf(list, sessionId, 'sessionStats');
-        const rawBreakdown = projectionOf(list, sessionId, 'contextBreakdown');
-        const usage = usageSummary(rawUsage ?? hostUsage);
-        const pressure = rawPressure ?? host?.contextPressure;
-        const stats = rawStats ?? host?.stats;
-        const breakdown = rawBreakdown ?? host?.contextBreakdown;
-        const hasUsage = rawUsage !== undefined && rawUsage !== null || hostUsage !== undefined && hostUsage !== null;
-        const hasPressure = rawPressure !== undefined && rawPressure !== null || host?.contextPressure !== undefined;
-        const hasStats = rawStats !== undefined && rawStats !== null || host?.stats !== undefined;
-        const hasBreakdown = rawBreakdown !== undefined && rawBreakdown !== null || host?.contextBreakdown !== undefined;
-        const loggedSelection = projectionOf(list, sessionId, 'modelSelection');
-        const selectedModel = host?.model ?? loggedSelection?.next?.model ?? loggedSelection?.lastUsed?.model;
-        const selectedProvider = host?.provider ?? loggedSelection?.next?.provider ?? loggedSelection?.lastUsed?.provider;
-        const hasModelTime = Array.isArray(host?.modelUsage)
-          && host.modelUsage.some((entry) => Number(entry?.durationMs) > 0);
-        const modelUsage = Array.isArray(host?.modelUsage) && host.modelUsage.length > 0
-          ? host.modelUsage
-          : selectedModel
-            ? [{ provider: selectedProvider ?? '', model: selectedModel, durationMs: 0 }]
-            : [];
-        const fallbackPeriod = deepSeekPeakAt(Date.now(), pricing?.holidays) ? 'peak' : 'offPeak';
-        const noUsage = usageSummary({});
-        const periods = host?.usageByPeriod
-          ? {
-              peak: periodUsage(host.usageByPeriod.peak),
-              offPeak: periodUsage(host.usageByPeriod.offPeak),
-            }
-          : fallbackPeriod === 'peak'
-            ? { peak: usage, offPeak: noUsage }
-            : { peak: noUsage, offPeak: usage };
-        const periodTotal = periods.peak.total + periods.offPeak.total;
-        const hasPeriodCoverage = usage.total === 0 || periodTotal > 0;
-        return {
-          id: sessionId,
-          usage,
-          pressure,
-          context: contextRateOf(pressure),
-          stats,
-          breakdown,
-          periods,
-          hasUsage,
-          hasPressure,
-          hasStats,
-          hasBreakdown,
-          hasModelTime,
-          estimatedPeriod: !host?.usageByPeriod && hasUsage,
-          hasPeriodCoverage,
-          model: selectedModel,
-          provider: selectedProvider,
-          modelUsage,
-          toolSource: host?.toolSource,
-          tools: host?.tools ?? [],
-          hasFileSize: Number.isFinite(Number(host?.fileBytes)),
-          fileBytes: Number.isFinite(Number(host?.fileBytes)) ? Number(host.fileBytes) : 0,
-          eventCount: Number.isFinite(Number(host?.eventCount)) ? Number(host.eventCount) : 0,
-          hasEventCount: Number.isFinite(Number(host?.eventCount)),
-          cost: hasUsage && hasPeriodCoverage ? costOfPeriods(periods, pricing) : null,
-        };
-      }), [list, live, idsKey, holidayKey, pricing]);
-
-      const totals = rows.reduce((acc, row) => ({
-        input: acc.input + row.usage.input,
-        cacheRead: acc.cacheRead + row.usage.cacheRead,
-        cacheWrite: acc.cacheWrite + row.usage.cacheWrite,
-        output: acc.output + row.usage.output,
-        reasoning: acc.reasoning + row.usage.reasoning,
-        total: acc.total + row.usage.total,
-      }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, total: 0 });
-      const cacheBase = totals.input + totals.cacheRead + totals.cacheWrite;
-      const cacheRate = cacheBase > 0 ? totals.cacheRead / cacheBase : 0;
-      const costs = rows.map((row) => row.cost);
-      const knownCosts = costs.filter((value) => value !== null);
-      const costPartial = knownCosts.length > 0 && knownCosts.length < costs.length;
-      const totalCost = knownCosts.length > 0
-        ? knownCosts.reduce((sum, value) => sum + value, 0)
-        : null;
-      const hostUnavailable = hostStatus === 'unavailable';
-      const activeRows = rows.filter((row) => {
-        const host = live[row.id];
-        return Boolean(host) && host.live === true && !host.error;
-      });
-      const errorRows = rows.filter((row) => {
-        const host = live[row.id];
-        return Boolean(host?.error) || (hostStatus === 'error' && !host);
-      });
-      const nonActiveRows = hostUnavailable || hostStatus === 'loading'
-        ? []
-        : rows.filter((row) => {
-            const host = live[row.id];
-            return !host || (host.live === false && !host.error);
-          });
-      const toolRows = activeRows;
-      const toolSnapshot = toolRows.some((row) => row.toolSource === 'snapshot');
-      const toolMap = new Map();
-      for (const row of toolRows) mergeTools(toolMap, row.tools);
-      const tools = [...toolMap.values()].sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name));
-      const availableTools = tools.filter((tool) => tool.available).length;
-      const closedTools = tools.length - availableTools;
-      const visibleTools = tools.filter((tool) => (toolsMode === 'available' ? tool.available : !tool.available));
-      const totalCalls = tools.reduce((sum, tool) => sum + tool.calls, 0);
-      const isSession = kind === 'session';
-      const showToolSection = isSession && (hostStatus === 'loading' || toolRows.length > 0);
-      const toolHideNotice = !showToolSection
-        ? hostUnavailable ? tr('data.toolHostUnavailable')
-          : errorRows.length > 0 ? tr('data.toolReadError')
-            : nonActiveRows.length > 0 ? tr('data.toolNonActive')
-              : null
-        : null;
-      const toolExtraNotes = showToolSection
-        ? [
-            nonActiveRows.length > 0
-              ? h('div', { className: 'dsg-dataHint' }, tr('data.toolSkippedNonActive', { count: nonActiveRows.length }))
-              : null,
-            errorRows.length > 0
-              ? h('div', { className: 'dsg-dataHint' }, tr('data.toolPartialError', { count: errorRows.length }))
-              : null,
-          ].filter(Boolean)
-        : [];
-      const stats = rows.reduce((acc, row) => {
-        const value = row.stats ?? {};
-        return {
-          turns: acc.turns + (Number(value.turns) || 0),
-          steps: acc.steps + (Number(value.steps) || 0),
-          llmMs: acc.llmMs + (Number(value.llmMs) || 0),
-          toolMs: acc.toolMs + (Number(value.toolMs) || 0),
-          ttftMs: acc.ttftMs + (Number(value.ttftMs) || 0),
-          ttftSteps: acc.ttftSteps + (Number(value.ttftSteps) || 0),
-          decodeMs: acc.decodeMs + (Number(value.decodeMs) || 0),
-          decodeTokens: acc.decodeTokens + (Number(value.decodeTokens) || 0),
-        };
-      }, { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0 });
-      const anyStats = rows.some((row) => row.hasStats);
-      const hasStats = rows.some((row) => row.stats && (row.stats.turns || row.stats.steps || row.stats.llmMs));
-      const anyUsage = rows.some((row) => row.hasUsage);
-      const periodPartial = rows.some((row) => row.hasUsage && row.hasPeriodCoverage === false);
-      const usagePartial = anyUsage && !rows.every((row) => row.hasUsage);
-      const anyBreakdown = rows.some((row) => row.hasBreakdown);
-      const breakdownPartial = anyBreakdown && !rows.every((row) => row.hasBreakdown);
-      const statsPartial = anyStats && !rows.every((row) => row.hasStats);
-      const anyModelTime = rows.some((row) => row.hasModelTime);
-      const modelTimePartial = anyModelTime && !rows.every((row) => row.hasModelTime);
-      const speed = isSession && stats.decodeMs > 0 ? formatTps(stats.decodeTokens / (stats.decodeMs / 1000)) : null;
-      const breakdownRows = rows.filter((row) => row.hasBreakdown);
-      const breakdownCount = breakdownRows.length;
-      const breakdownSum = breakdownRows.reduce((acc, row) => ({
-        systemTokens: acc.systemTokens + (Number(row.breakdown?.systemTokens) || 0),
-        toolsTokens: acc.toolsTokens + (Number(row.breakdown?.toolsTokens) || 0),
-        messageTokens: acc.messageTokens + (Number(row.breakdown?.messageTokens) || 0),
-      }), { systemTokens: 0, toolsTokens: 0, messageTokens: 0 });
-      const breakdown = isSession
-        ? breakdownSum
-        : {
-            systemTokens: breakdownCount > 0 ? breakdownSum.systemTokens / breakdownCount : 0,
-            toolsTokens: breakdownCount > 0 ? breakdownSum.toolsTokens / breakdownCount : 0,
-            messageTokens: breakdownCount > 0 ? breakdownSum.messageTokens / breakdownCount : 0,
-          };
-      const breakdownTotal = breakdown.systemTokens + breakdown.toolsTokens + breakdown.messageTokens;
-      const sessionContext = isSession ? rows[0]?.context ?? null : null;
-      const percent = sessionContext === null ? null : Math.min(100, Math.round(sessionContext.rate * 100));
-      const remainingContext = sessionContext === null ? 0 : Math.max(0, sessionContext.window - breakdownTotal);
-      const totalPeriods = rows.reduce((acc, row) => ({
-        peak: {
-          input: acc.peak.input + row.periods.peak.input,
-          cacheRead: acc.peak.cacheRead + row.periods.peak.cacheRead,
-          cacheWrite: acc.peak.cacheWrite + row.periods.peak.cacheWrite,
-          output: acc.peak.output + row.periods.peak.output,
-          total: acc.peak.total + row.periods.peak.total,
-        },
-        offPeak: {
-          input: acc.offPeak.input + row.periods.offPeak.input,
-          cacheRead: acc.offPeak.cacheRead + row.periods.offPeak.cacheRead,
-          cacheWrite: acc.offPeak.cacheWrite + row.periods.offPeak.cacheWrite,
-          output: acc.offPeak.output + row.periods.offPeak.output,
-          total: acc.offPeak.total + row.periods.offPeak.total,
-        },
-      }), {
-        peak: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 },
-        offPeak: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, total: 0 },
-      });
-      const costPeriods = [
-        { key: 'peak', label: tr('data.peak'), usage: totalPeriods.peak, rates: pricing?.peak },
-        { key: 'offPeak', label: tr('data.offPeak'), usage: totalPeriods.offPeak, rates: pricing?.offPeak },
-      ].map((period) => ({
-        ...period,
-        cost: costOfUsage(period.usage, period.rates),
-      })).filter((period) => period.usage.total > 0);
-      const periodParts = [
-        { key: 'input', label: tr('data.input'), field: 'input' },
-        { key: 'cacheRead', label: tr('data.cacheRead'), field: 'cacheRead' },
-        { key: 'cacheWrite', label: tr('data.cacheWrite'), field: 'cacheWrite' },
-        { key: 'output', label: tr('data.output'), field: 'output' },
-      ];
-      const estimatedPeriod = rows.some((row) => row.estimatedPeriod);
-      const modelMap = new Map();
-      for (const row of rows) {
-        for (const entry of row.modelUsage) {
-          if (!entry || typeof entry.provider !== 'string' || typeof entry.model !== 'string') continue;
-          const key = `${entry.provider}\u0000${entry.model}`;
-          const current = modelMap.get(key) ?? {
-            provider: entry.provider,
-            model: entry.model,
-            durationMs: 0,
-          };
-          current.durationMs += Math.max(0, Number(entry.durationMs) || 0);
-          modelMap.set(key, current);
-        }
-      }
-      const modelRows = [...modelMap.values()]
-        .sort((a, b) => b.durationMs - a.durationMs || a.model.localeCompare(b.model));
-      const modelTotalMs = modelRows.reduce((sum, entry) => sum + entry.durationMs, 0);
-      for (const entry of modelRows) {
-        entry.share = modelTotalMs > 0
-          ? entry.durationMs / modelTotalMs
-          : 1 / modelRows.length;
-      }
-      const modelValue = modelRows.length === 0
-        ? '—'
-        : !anyModelTime
-          ? modelRows.length === 1
-            ? `${modelRows[0].model} · ${tr('data.noTimeShort')}`
-            : `${modelRows.length} ${tr('data.models')} · ${tr('data.noTimeShort')}`
-          : modelRows.length === 1
-            ? `${modelRows[0].model} · 100%`
-            : `${modelRows.length} ${tr('data.models')} · ${formatDurationMs(modelTotalMs)}`;
-
-      const fileSizeRows = rows.filter((row) => row.hasFileSize);
-      const anyFileSize = fileSizeRows.length > 0;
-      const fileSizePartial = anyFileSize && fileSizeRows.length < rows.length;
-      const totalFileBytes = fileSizeRows.reduce((sum, row) => sum + row.fileBytes, 0);
-      const eventCountRows = rows.filter((row) => row.hasEventCount);
-      const anyEventCount = eventCountRows.length > 0;
-      const totalEventCount = eventCountRows.reduce((sum, row) => sum + row.eventCount, 0);
-      const eventCountPartial = anyEventCount && eventCountRows.length < rows.length;
-      const fileValue = anyFileSize ? formatBytes(totalFileBytes) : '—';
-
-      const dataIncomplete = !anyUsage
-        || periodPartial
-        || costPartial
-        || !anyFileSize
-        || usagePartial
-        || !anyStats
-        || statsPartial
-        || !anyBreakdown
-        || breakdownPartial
-        || (modelRows.length > 0 && !anyModelTime)
-        || modelTimePartial
-        || estimatedPeriod
-        || totalCost === null
-        || !pricingConfigured(pricing);
-
-      const modelCounts = new Map();
-      for (const row of rows) {
-        if (row.model) modelCounts.set(row.model, (modelCounts.get(row.model) ?? 0) + 1);
-      }
-      const models = [...modelCounts.entries()].map(([model, count]) => `${model} × ${count}`);
-      const running = sessionIds.filter((id) => list.byId?.[id]?.running === true).length;
-      const modelText = isSession
-        ? (rows[0]?.provider ? `${rows[0].provider} / ${rows[0]?.model ?? '—'}` : rows[0]?.model ?? '—')
-        : models.join(', ') || '—';
-      const metaText = isSession
-        ? `${modelText}${hasStats ? ` · ${tr('data.turns')} ${stats.turns}` : ''}`
-        : `${rows.length} ${tr('data.sessions')} · ${running} ${tr('status.running')}`;
-      const swatched = (label, className) => h(
-        'span',
-        { className: 'dsg-statDetailLabel' },
-        h('span', { className: `dsg-statSwatch ${className}`, 'aria-hidden': 'true' }),
-        label,
-      );
-      const detailList = (entries) => h(
-        'dl',
-        { className: 'dsg-statDetails' },
-        entries.map(([label, value]) => h(
-          'div',
-          { key: label, className: 'dsg-statDetail' },
-          h('dt', {}, label),
-          h('dd', {}, value),
-        )),
-      );
-      const toggle = (key) => setExpanded((previous) => ({ ...previous, [key]: !previous[key] }));
-      const activityValue = !anyStats
-        ? '—'
-        : hasStats
-          ? `${stats.turns} ${tr('data.turns')} · ${stats.steps} ${tr('data.steps')}${speed ? ` · ${speed}` : ''}`
-          : '—';
-      const usageValue = anyUsage
-        ? `${formatCompactNumber(totals.total)}${cacheBase > 0 ? ` · ${(cacheRate * 100).toFixed(1)}%` : ''}`
-        : '—';
-      const contextValue = sessionContext !== null
-        ? h(
-            React.Fragment,
-            null,
-            h(ContextRing, { rate: sessionContext.rate }),
-            ` ~${percent}% · ~${formatCompactNumber(sessionContext.used)} / ${formatCompactNumber(sessionContext.window)}`,
-          )
-        : breakdownTotal > 0 ? `~${formatCompactNumber(breakdownTotal)}` : '—';
-      const toolsValue = `${availableTools} ${tr('data.toolsAvailable')} · ${closedTools} ${tr('data.toolsClosed')} · ${totalCalls} ${tr('data.toolCalls')}`;
-
-      return h(
-        'div',
-        {
-          className: 'dsg-dataOverlay',
-          onMouseDown: (event) => {
-            if (event.target === event.currentTarget) onClose();
-          },
-        },
-        h(
-          'section',
-          {
-            className: 'dsg-dataPanel',
-            role: 'dialog',
-            'aria-modal': 'true',
-            'aria-label': title,
-          },
-          h(
-            'header',
-            { className: 'dsg-dataHeader' },
-            h(
-              'div',
-              { className: 'dsg-dataHeading' },
-              h('div', { className: 'dsg-dataTitle' }, title),
-              h('div', { className: 'dsg-dataMeta' }, metaText),
-            ),
-            h(
-              'div',
-              { className: 'dsg-dataHeaderActions' },
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dsg-dataRefresh',
-                  title: tr('data.refresh'),
-                  'aria-label': tr('data.refresh'),
-                  disabled: loading,
-                  onClick: () => setRevision((value) => value + 1),
-                },
-                loading ? '…' : '↻',
-              ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dsg-dataClose',
-                  title: tr('data.close'),
-                  'aria-label': tr('data.close'),
-                  onClick: onClose,
-                },
-                '×',
-              ),
-            ),
-          ),
-          h(
-            'div',
-            { className: 'dsg-dataBody' },
-            !isSession
-              ? h('div', { className: 'dsg-dataHint' }, tr('data.aggregationHint'))
-              : null,
-            dataIncomplete
-              ? h('div', { className: 'dsg-dataHint' }, tr('data.incompleteHint'))
-              : null,
-            h(
-              'div',
-              { className: 'dsg-statList' },
-              h(
-                StatRow,
-                {
-                  label: tr('data.activity'),
-                  aggregation: isSession ? undefined : tr('data.aggSum'),
-                  icon: IconGauge,
-                  value: activityValue,
-                  open: expanded.activity,
-                  onToggle: () => toggle('activity'),
-                },
-                detailList(isSession
-                  ? [
-                      [tr('data.turns'), hasStats ? formatExactNumber(stats.turns) : '—'],
-                      [tr('data.steps'), hasStats ? formatExactNumber(stats.steps) : '—'],
-                      [tr('data.llmTime'), formatDurationMs(stats.llmMs)],
-                      [tr('data.toolTime'), formatDurationMs(stats.toolMs)],
-                      [tr('data.ttft'), stats.ttftSteps > 0 ? formatDurationMs(stats.ttftMs / stats.ttftSteps) : '—'],
-                      [tr('data.speed'), speed ?? '—'],
-                    ]
-                  : [
-                      [tr('data.turns'), hasStats ? formatExactNumber(stats.turns) : '—'],
-                      [tr('data.steps'), hasStats ? formatExactNumber(stats.steps) : '—'],
-                      [tr('data.llmTime'), formatDurationMs(stats.llmMs)],
-                      [tr('data.toolTime'), formatDurationMs(stats.toolMs)],
-                    ]),
-                !anyStats
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.noStatsData'))
-                  : statsPartial
-                    ? h('div', { className: 'dsg-dataHint' }, tr('data.partialStats'))
-                    : null,
-              ),
-              h(
-                StatRow,
-                {
-                  label: tr('data.usage'),
-                  aggregation: isSession ? undefined : tr('data.aggSum'),
-                  icon: IconDatabase,
-                  value: usageValue,
-                  open: expanded.usage,
-                  onToggle: () => toggle('usage'),
-                },
-                h(StatBar, {
-                  parts: [
-                    { key: 'input', value: totals.input, className: 'dsg-segInput' },
-                    { key: 'cacheRead', value: totals.cacheRead, className: 'dsg-segCacheRead' },
-                    { key: 'cacheWrite', value: totals.cacheWrite, className: 'dsg-segCacheWrite' },
-                    { key: 'output', value: totals.output, className: 'dsg-segOutput' },
-                  ],
-                }),
-                detailList([
-                  [tr('data.cacheHit'), anyUsage && cacheBase > 0 ? `${(cacheRate * 100).toFixed(1)}%` : '—'],
-                  [swatched(tr('data.input'), 'dsg-segInput'), anyUsage ? formatExactNumber(totals.input) : '—'],
-                  [swatched(tr('data.cacheRead'), 'dsg-segCacheRead'), anyUsage ? formatExactNumber(totals.cacheRead) : '—'],
-                  [swatched(tr('data.cacheWrite'), 'dsg-segCacheWrite'), anyUsage ? formatExactNumber(totals.cacheWrite) : '—'],
-                  [swatched(tr('data.output'), 'dsg-segOutput'), anyUsage ? formatExactNumber(totals.output) : '—'],
-                  ...(anyUsage && totals.reasoning > 0 ? [[tr('data.reasoning'), formatExactNumber(totals.reasoning)]] : []),
-                ]),
-                !anyUsage
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.noUsageData'))
-                  : usagePartial
-                    ? h('div', { className: 'dsg-dataHint' }, tr('data.partialUsage'))
-                    : null,
-              ),
-              h(
-                StatRow,
-                {
-                  label: tr('data.context'),
-                  aggregation: isSession ? undefined : tr('data.aggAverage'),
-                  icon: IconContext,
-                  value: contextValue,
-                  open: expanded.context,
-                  onToggle: () => toggle('context'),
-                },
-                breakdownTotal > 0
-                  ? isSession
-                    ? h(
-                        React.Fragment,
-                        null,
-                        h(StatBar, {
-                          parts: [
-                            { key: 'system', value: breakdown.systemTokens, className: 'dsg-segSystem' },
-                            { key: 'tools', value: breakdown.toolsTokens, className: 'dsg-segTools' },
-                            { key: 'messages', value: breakdown.messageTokens, className: 'dsg-segMessages' },
-                            { key: 'remaining', value: remainingContext, className: 'dsg-segRemaining' },
-                          ],
-                        }),
-                        detailList([
-                          [swatched(tr('data.system'), 'dsg-segSystem'), `~${formatCompactNumber(breakdown.systemTokens)}`],
-                          [swatched(tr('data.tools'), 'dsg-segTools'), `~${formatCompactNumber(breakdown.toolsTokens)}`],
-                          [swatched(tr('data.messages'), 'dsg-segMessages'), `~${formatCompactNumber(breakdown.messageTokens)}`],
-                          [swatched(tr('data.remaining'), 'dsg-segRemaining'), `~${formatCompactNumber(remainingContext)}`],
-                        ]),
-                      )
-                    : detailList([
-                        [swatched(tr('data.system'), 'dsg-segSystem'), `~${formatCompactNumber(breakdown.systemTokens)}`],
-                        [swatched(tr('data.tools'), 'dsg-segTools'), `~${formatCompactNumber(breakdown.toolsTokens)}`],
-                        [swatched(tr('data.messages'), 'dsg-segMessages'), `~${formatCompactNumber(breakdown.messageTokens)}`],
-                      ])
-                  : h('div', { className: 'dsg-dataHint' }, tr('data.noBreakdown')),
-                breakdownPartial
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.partialBreakdown'))
-                  : null,
-              ),
-              modelRows.length > 0 ? h(
-                StatRow,
-                {
-                  label: tr('data.models'),
-                  aggregation: isSession ? undefined : tr('data.aggSum'),
-                  icon: IconModel,
-                  value: modelValue,
-                  open: expanded.models,
-                  onToggle: () => toggle('models'),
-                },
-                anyModelTime
-                  ? h(StatBar, {
-                      parts: modelRows.map((entry, index) => ({
-                        key: `${entry.provider}/${entry.model}`,
-                        value: entry.durationMs,
-                        className: `dsg-segModel${index % 5}`,
-                      })),
-                    })
-                  : null,
-                h('div', { className: 'dsg-dataHint' }, tr('data.modelTimeHint')),
-                detailList(modelRows.map((entry, index) => [
-                  swatched(`${entry.model}`, `dsg-segModel${index % 5}`),
-                  anyModelTime
-                    ? `${formatPercent(entry.share)} · ${formatDurationMs(entry.durationMs)}`
-                    : '—',
-                ])),
-                !anyModelTime
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.modelTimeUnavailable'))
-                  : modelTimePartial
-                    ? h('div', { className: 'dsg-dataHint' }, tr('data.modelTimePartial'))
-                    : null,
-              ) : null,
-              h(
-                StatRow,
-                {
-                  label: tr('data.fileSize'),
-                  aggregation: isSession ? undefined : tr('data.aggSum'),
-                  icon: IconStorage,
-                  value: fileValue,
-                  open: expanded.storage,
-                  onToggle: () => toggle('storage'),
-                },
-                detailList([
-                  [tr('data.fileSize'), anyFileSize ? formatBytes(totalFileBytes) : '—'],
-                  [tr('data.fileEvents'), anyEventCount ? formatExactNumber(totalEventCount) : '—'],
-                  ...(fileSizePartial ? [[tr('data.fileSessions'), `${fileSizeRows.length} / ${rows.length}`]] : []),
-                ]),
-                h('div', { className: 'dsg-dataHint' }, anyFileSize
-                  ? tr('data.fileSizeHint')
-                  : tr('data.fileSizeUnavailable')),
-                fileSizePartial
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.fileSizePartial'))
-                  : null,
-                eventCountPartial
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.fileEventPartial'))
-                  : null,
-              ),
-              h(
-                StatRow,
-                {
-                  label: tr('data.cost'),
-                  aggregation: isSession ? undefined : tr('data.aggSum'),
-                  icon: IconCoin,
-                  value: pricingConfigured(pricing) && knownCosts.length > 0 ? formatCost(totalCost) : '—',
-                  open: expanded.cost,
-                  onToggle: () => toggle('cost'),
-                },
-                !pricingConfigured(pricing)
-                  ? h('div', { className: 'dsg-dataHint' }, `${tr('data.noPrice')} · ${tr('data.priceHint')}`)
-                  : !anyUsage
-                    ? h('div', { className: 'dsg-dataHint' }, tr('data.noCostUsage'))
-                    : h(
-                      React.Fragment,
-                      null,
-                      h(StatBar, {
-                        parts: costPeriods.map((period) => ({
-                          key: period.key,
-                          value: period.cost ?? 0,
-                          className: period.key === 'peak' ? 'dsg-segPeak' : 'dsg-segOffPeak',
-                        })),
-                      }),
-                      h('div', { className: 'dsg-dataHint' }, `${tr('data.perMillion')} · ${tr('data.peakSchedule')}`),
-                      ...costPeriods
-                        .filter((period) => period.usage.total > 0)
-                        .map((period) => h(
-                          'div',
-                          { key: period.key, className: 'dsg-dataCostPeriod' },
-                          h(
-                            'div',
-                            { className: 'dsg-dataCostPeriodTitle' },
-                            h('span', {}, period.label),
-                            h('span', {}, formatCost(period.cost)),
-                          ),
-                          h('div', { className: 'dsg-dataCostHead' },
-                            h('span', {}, tr('data.item')),
-                            h('span', {}, tr('data.tokens')),
-                            h('span', {}, tr('data.price')),
-                            h('span', {}, tr('data.amount'))),
-                          ...periodParts.map((part) => h(
-                            'div',
-                            { key: part.key, className: 'dsg-dataCostRow' },
-                            h('span', { className: 'dsg-dataCostLabel' }, h('span', { className: `dsg-statSwatch dsg-seg${part.key.charAt(0).toUpperCase()}${part.key.slice(1)}`, 'aria-hidden': 'true' }), part.label),
-                            h('span', { className: 'dsg-dataCostTokens' }, formatCompactNumber(period.usage[part.field])),
-                            h('span', { className: 'dsg-dataCostPrice' }, Number.isFinite(Number(period.rates?.[part.field])) ? `¥${Number(period.rates[part.field]).toFixed(4)}` : '—'),
-                            h('span', { className: 'dsg-dataCostAmount' }, formatCost(
-                              Number.isFinite(Number(period.rates?.[part.field]))
-                                ? period.usage[part.field] / 1e6 * Number(period.rates[part.field])
-                                : null,
-                            )),
-                          )),
-                        )),
-                      h('div', { className: 'dsg-dataCostTotal' },
-                        h('span', {}, tr('data.cost')),
-                        h('span', {}, formatCost(totalCost))),
-                      estimatedPeriod
-                        ? h('div', { className: 'dsg-dataHint' }, tr('data.estimatedPeriod'))
-                        : null,
-                      totalCost === null && pricingConfigured(pricing)
-                        ? h('div', { className: 'dsg-dataHint' }, tr('data.missingPeriodPrice'))
-                        : null,
-                      periodPartial
-                        ? h('div', { className: 'dsg-dataHint' }, tr('data.noPeriodData'))
-                        : null,
-                      costPartial
-                        ? h('div', { className: 'dsg-dataHint' }, tr('data.costPartial'))
-                        : null,
-                    ),
-              ),
-              showToolSection ? h(
-                StatRow,
-                {
-                  label: tr('data.tools'),
-                  icon: IconWrench,
-                  value: toolsValue,
-                  open: expanded.tools,
-                  onToggle: () => toggle('tools'),
-                },
-                h(
-                  'div',
-                  { className: 'dsg-dataToolModes', role: 'group', 'aria-label': tr('data.tools') },
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dsg-dataToolMode' + (toolsMode === 'available' ? ' active' : ''),
-                      'aria-pressed': toolsMode === 'available',
-                      onClick: () => setToolsMode('available'),
-                    },
-                    `${tr('data.toolsAvailable')} (${availableTools})`,
-                  ),
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'dsg-dataToolMode' + (toolsMode === 'unavailable' ? ' active' : ''),
-                      'aria-pressed': toolsMode === 'unavailable',
-                      onClick: () => setToolsMode('unavailable'),
-                    },
-                    `${tr('data.toolsClosed')} (${closedTools})`,
-                  ),
-                ),
-                visibleTools.length > 0
-                  ? h(
-                      'div',
-                      { className: 'dsg-dataTools' },
-                      visibleTools.map((tool) => h(
-                        'div',
-                        { key: tool.name, className: 'dsg-dataToolRow' },
-                        h(
-                          'span',
-                          { className: 'dsg-dataToolName' },
-                          tool.available ? null : h('span', { className: 'dsg-dataToolMuted' }, '· '),
-                          tool.name,
-                        ),
-                        h(
-                          'span',
-                          { className: 'dsg-dataToolStats' },
-                          `${tool.calls} ${tr('data.toolCalls')}`,
-                          tool.errors > 0 ? ` · ${tool.errors} ${tr('data.toolErrors')}` : '',
-                        ),
-                      )),
-                    )
-                  : h('div', { className: 'dsg-dataHint' }, loading
-                      ? tr('data.loading')
-                      : tools.length === 0 ? tr('data.toolNoVisible')
-                        : toolsMode === 'available' ? tr('data.noAvailableTools') : tr('data.noClosedTools')),
-                h('div', { className: 'dsg-dataHint' }, tr('data.toolsScope')),
-                toolSnapshot
-                  ? h('div', { className: 'dsg-dataHint' }, tr('data.toolSnapshot'))
-                  : null,
-                ...toolExtraNotes,
-              ) : null,
-              isSession && !showToolSection && toolHideNotice
-                ? h('div', { className: 'dsg-dataHint' }, toolHideNotice)
-                : null,
-            ),
-          ),
-          h(
-            'footer',
-            { className: 'dsg-dataFooter' },
-            h('span', {}, tr('data.note')),
-            loading ? h('span', {}, tr('data.loading')) : null,
-          ),
-        ),
-      );
-    }
-
     function DeleteSessionDialog(props) {
       const { sessionId, title, knownRunning, knownSubagents, currentSessionId, tr: translator, onClose, onDeleted } = props;
       const tr = typeof translator === 'function' ? translator : translate;
@@ -4190,121 +3114,16 @@ window.__ModuleLoader__.load({
     function SessionGroupsSettings(props) {
       const tr = typeof props.t === 'function' ? props.t : translate;
       const [runningLight, setRunningLight] = React.useState(() => loadPrefs().runningLight === true);
-      const [priceMode, setPriceMode] = React.useState('peak');
-      const [holidayText, setHolidayText] = React.useState(() => (loadPrefs().pricing?.holidays ?? []).join(', '));
-      const makePriceValues = (pricing) => {
-        const source = pricing ?? {};
-        const valuesFor = (rates) => ({
-          input: rates?.input === undefined ? '' : String(rates.input),
-          cacheRead: rates?.cacheRead === undefined ? '' : String(rates.cacheRead),
-          cacheWrite: rates?.cacheWrite === undefined ? '' : String(rates.cacheWrite),
-          output: rates?.output === undefined ? '' : String(rates.output),
-        });
-        return {
-          peak: valuesFor(source.peak),
-          offPeak: valuesFor(source.offPeak),
-        };
-      };
-      const [priceValues, setPriceValues] = React.useState(() => makePriceValues(loadPrefs().pricing));
-
       React.useEffect(() => {
-        const sync = () => {
-          const prefs = loadPrefs();
-          setRunningLight(prefs.runningLight === true);
-          setHolidayText((prefs.pricing?.holidays ?? []).join(', '));
-          setPriceValues(makePriceValues(prefs.pricing));
-        };
+        const sync = () => setRunningLight(loadPrefs().runningLight === true);
         window.addEventListener(BRIDGE_EVENT, sync);
         return () => window.removeEventListener(BRIDGE_EVENT, sync);
       }, []);
-
       const toggleRunningLight = () => {
         const next = !runningLight;
         setRunningLight(next);
         setRunningLightPreference(next);
       };
-
-      const updatePrice = (key, raw) => {
-        setPriceValues((previous) => ({
-          ...previous,
-          [priceMode]: { ...previous[priceMode], [key]: raw },
-        }));
-      };
-
-      const commitPrice = (key) => {
-        const trimmed = String(priceValues[priceMode]?.[key] ?? '').trim();
-        const numeric = trimmed === '' ? undefined : Number(trimmed);
-        if (numeric !== undefined && (!Number.isFinite(numeric) || numeric < 0)) return;
-        const prefs = loadPrefs();
-        const pricing = {
-          peak: { ...(prefs.pricing?.peak ?? {}) },
-          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
-          currency: 'CNY',
-          touched: true,
-          ...(Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0 ? { holidays: prefs.pricing.holidays } : {}),
-        };
-        if (numeric === undefined) delete pricing[priceMode][key];
-        else pricing[priceMode][key] = numeric;
-        savePrefs({ ...prefs, pricing });
-        try {
-          window.dispatchEvent(new Event(BRIDGE_EVENT));
-        } catch {
-          /* the data panel reads the value on its next open */
-        }
-      };
-
-      const savePrices = () => {
-        const pricing = {
-          peak: {},
-          offPeak: {},
-          currency: 'CNY',
-          touched: true,
-        };
-        for (const mode of ['peak', 'offPeak']) {
-          for (const key of ['input', 'cacheRead', 'cacheWrite', 'output']) {
-            const trimmed = String(priceValues[mode]?.[key] ?? '').trim();
-            if (trimmed === '') continue;
-            const numeric = Number(trimmed);
-            if (!Number.isFinite(numeric) || numeric < 0) return;
-            pricing[mode][key] = numeric;
-          }
-        }
-        const prefs = loadPrefs();
-        if (Array.isArray(prefs.pricing?.holidays) && prefs.pricing.holidays.length > 0) {
-          pricing.holidays = prefs.pricing.holidays;
-        }
-        savePrefs({ ...prefs, pricing });
-        try {
-          window.dispatchEvent(new Event(BRIDGE_EVENT));
-        } catch {
-          /* the data panel reads the value on its next open */
-        }
-      };
-
-      const commitHolidays = () => {
-        const days = [...new Set(
-          String(holidayText)
-            .split(/[,，\s]+/)
-            .map((day) => day.trim())
-            .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day)),
-        )].sort();
-        const prefs = loadPrefs();
-        const pricing = {
-          peak: { ...(prefs.pricing?.peak ?? {}) },
-          offPeak: { ...(prefs.pricing?.offPeak ?? {}) },
-          currency: 'CNY',
-          touched: true,
-        };
-        if (days.length > 0) pricing.holidays = days;
-        savePrefs({ ...prefs, pricing });
-        setHolidayText(days.join(', '));
-        try {
-          window.dispatchEvent(new Event(BRIDGE_EVENT));
-        } catch {
-          /* the data panel reads the value on its next open */
-        }
-      };
-
       const label = tr('settings.runningLight');
       return h(
         'div',
@@ -4320,11 +3139,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { className: 'dsg-settingsLabelRow' },
-              h(
-                'span',
-                { className: 'dsg-settingsPreviewStatus', 'aria-hidden': 'true' },
-                h(StateDot, { state: 'ongoing' }),
-              ),
+              h('span', { className: 'dsg-settingsPreviewStatus', 'aria-hidden': 'true' }, h(StateDot, { state: 'ongoing' })),
               h('span', { className: 'dsg-settingsLabel' }, label),
             ),
             h('div', { className: 'dsg-settingsHint' }, tr('settings.runningLightHint')),
@@ -4340,104 +3155,6 @@ window.__ModuleLoader__.load({
               onClick: toggleRunningLight,
             },
             h('span', { className: 'dsg-switchThumb', 'aria-hidden': 'true' }),
-          ),
-        ),
-        h(
-          'div',
-          { className: 'dsg-settingsRow' },
-          h(
-            'div',
-            { className: 'dsg-settingsMain' },
-            h(
-              'div',
-              { className: 'dsg-settingsLabelRow' },
-              h('span', { className: 'dsg-settingsLabel' }, tr('settings.pricing')),
-            ),
-            h('div', { className: 'dsg-settingsHint' }, tr('settings.pricingHint')),
-            h(
-              'div',
-              { className: 'dsg-priceModes', role: 'group', 'aria-label': tr('settings.pricing') },
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dsg-priceMode' + (priceMode === 'peak' ? ' active' : ''),
-                  'aria-pressed': priceMode === 'peak',
-                  onClick: () => setPriceMode('peak'),
-                },
-                tr('settings.peak'),
-              ),
-              h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dsg-priceMode' + (priceMode === 'offPeak' ? ' active' : ''),
-                  'aria-pressed': priceMode === 'offPeak',
-                  onClick: () => setPriceMode('offPeak'),
-                },
-                tr('settings.offPeak'),
-              ),
-            ),
-            h(
-              'div',
-              { className: 'dsg-priceGrid' },
-              [
-                ['input', tr('settings.priceInput')],
-                ['cacheRead', tr('settings.priceCacheRead')],
-                ['cacheWrite', tr('settings.priceCacheWrite')],
-                ['output', tr('settings.priceOutput')],
-              ].map(([key, fieldLabel]) => h(
-                'label',
-                { key, className: 'dsg-priceField' },
-                h('span', {}, fieldLabel),
-                h('input', {
-                  className: 'dsg-priceInput',
-                  type: 'number',
-                  min: '0',
-                  step: '0.001',
-                  inputMode: 'decimal',
-                  value: priceValues[priceMode]?.[key] ?? '',
-                  placeholder: '0.00',
-                  onChange: (event) => updatePrice(key, event.target.value),
-                  onBlur: () => commitPrice(key),
-                  onKeyDown: (event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }
-                  },
-                }),
-              )),
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                className: 'dsg-priceSave',
-                onClick: savePrices,
-              },
-              tr('settings.savePrices'),
-            ),
-            h(
-              'label',
-              { className: 'dsg-holidayField' },
-              h('span', {}, tr('settings.holidays')),
-              h('input', {
-                className: 'dsg-priceInput',
-                type: 'text',
-                value: holidayText,
-                placeholder: tr('settings.holidaysPlaceholder'),
-                onChange: (event) => setHolidayText(event.target.value),
-                onBlur: commitHolidays,
-                onKeyDown: (event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    event.currentTarget.blur();
-                  }
-                },
-              }),
-            ),
-            h('div', { className: 'dsg-settingsHint' }, tr('settings.holidaysHint')),
           ),
         ),
       );
@@ -5431,6 +4148,7 @@ window.__ModuleLoader__.load({
         expandSidebar,
         renderSlot,
         scheduleCatalog,
+        dataProviderStore,
         useSectionScroller,
         useSessions,
         useWorkspaces,
@@ -5462,7 +4180,6 @@ window.__ModuleLoader__.load({
       const [editingWorkspace, setEditingWorkspace] = React.useState(null);
       const [editingSession, setEditingSession] = React.useState(null);
       const [menu, setMenu] = React.useState(null);
-      const [dataPanel, setDataPanel] = React.useState(null);
       const [deleteDialog, setDeleteDialog] = React.useState(null);
       const [viewMenu, setViewMenu] = React.useState(null);
       const [notice, setNotice] = React.useState(null);
@@ -5496,6 +4213,15 @@ window.__ModuleLoader__.load({
         getEmptyScheduleSnapshot,
       );
       const now = useNow(60000);
+      const dataProvider = React.useSyncExternalStore(
+        dataProviderStore && typeof dataProviderStore.subscribe === 'function'
+          ? dataProviderStore.subscribe
+          : noDataProviderSubscribe,
+        dataProviderStore && typeof dataProviderStore.getSnapshot === 'function'
+          ? dataProviderStore.getSnapshot
+          : getNullDataProvider,
+        getNullDataProvider,
+      );
       const scheduleBySession = React.useMemo(() => {
         const map = new Map();
         for (const task of scheduleSnapshot.records ?? []) {
@@ -5891,11 +4617,17 @@ window.__ModuleLoader__.load({
 
       const openDataPanel = (kind, sessionIds, target) => {
         closeMenu();
-        setDataPanel({
-          key: `${kind}:${target?.sessionId ?? target?.groupId ?? target ?? ''}`,
+        if (!dataProvider || typeof dataProvider.open !== 'function') return;
+        const normalizedTarget = target && typeof target === 'object'
+          ? target
+          : kind === 'workspace'
+            ? { workspaceId: target }
+            : { sessionId: target };
+        dataProvider.open({
           kind,
-          title: `${tr(kind === 'session' ? 'data.title.session' : kind === 'group' ? 'data.title.group' : 'data.title.workspace')} · 「${dataTitle(kind, target)}」`,
           sessionIds: [...new Set(sessionIds.filter((id) => typeof id === 'string' && id.length > 0))],
+          target: normalizedTarget,
+          title: `${tr(kind === 'session' ? 'data.title.session' : kind === 'group' ? 'data.title.group' : 'data.title.workspace')} · 「${dataTitle(kind, target)}」`,
         });
       };
 
@@ -8551,16 +7283,20 @@ window.__ModuleLoader__.load({
                   })),
                 })
               : null,
-            h('div', { className: 'dsg-menuSeparator' }),
-            h(MenuItem, {
-              icon: h(IconData),
-              label: tr('data.open'),
-              onClick: () => openDataPanel(
-                'group',
-                groupSessionIds(menu.workspaceId, menu.groupId),
-                { workspaceId: menu.workspaceId, groupId: menu.groupId },
-              ),
-            }),
+            dataProvider
+              ? h('div', { className: 'dsg-menuSeparator' })
+              : null,
+            dataProvider
+              ? h(MenuItem, {
+                  icon: h(IconData),
+                  label: tr('data.open'),
+                  onClick: () => openDataPanel(
+                    'group',
+                    groupSessionIds(menu.workspaceId, menu.groupId),
+                    { workspaceId: menu.workspaceId, groupId: menu.groupId },
+                  ),
+                })
+              : null,
             h('div', { className: 'dsg-menuSeparator' }),
             h(MenuItem, {
               icon: h(IconUngroup),
@@ -8587,15 +7323,17 @@ window.__ModuleLoader__.load({
               onClick: () => handleSortWorkspace(workspace.workspaceId, 'initial'),
             }),
             h('div', { className: 'dsg-menuSeparator' }),
-            h(MenuItem, {
-              icon: h(IconData),
-              label: tr('data.open'),
-              onClick: () => openDataPanel(
-                'workspace',
-                workspaceSessionIds(workspace.workspaceId),
-                workspace.workspaceId,
-              ),
-            }),
+            dataProvider
+              ? h(MenuItem, {
+                  icon: h(IconData),
+                  label: tr('data.open'),
+                  onClick: () => openDataPanel(
+                    'workspace',
+                    workspaceSessionIds(workspace.workspaceId),
+                    workspace.workspaceId,
+                  ),
+                })
+              : null,
             h(MenuItem, {
               icon: h(IconEdit),
               label: tr('workspace.rename'),
@@ -8661,11 +7399,13 @@ window.__ModuleLoader__.load({
             onClick: () => handleCopyId(menu.sessionId),
           }),
           externalSessionMenu,
-          h(MenuItem, {
-            icon: h(IconData),
-            label: tr('data.open'),
-            onClick: () => openDataPanel('session', [menu.sessionId], menu.sessionId),
-          }),
+          dataProvider
+            ? h(MenuItem, {
+                icon: h(IconData),
+                label: tr('data.open'),
+                onClick: () => openDataPanel('session', [menu.sessionId], menu.sessionId),
+              })
+            : null,
           h('div', { className: 'dsg-menuSeparator' }),
           h(MenuItem, {
             icon: h(IconTrash),
@@ -8725,19 +7465,6 @@ window.__ModuleLoader__.load({
               setPrefs((previous) => removeSessionFromGroups(previous, workspaceId, sessionId));
               notify(tr('delete.done'), true);
             },
-          })
-        : null;
-
-      const renderDataPanel = () => dataPanel
-        ? h(DataPanel, {
-            key: dataPanel.key,
-            kind: dataPanel.kind,
-            title: dataPanel.title,
-            sessionIds: dataPanel.sessionIds,
-            pricing: prefs.pricing,
-            useSessions,
-            tr,
-            onClose: () => setDataPanel(null),
           })
         : null;
 
@@ -8898,7 +7625,6 @@ window.__ModuleLoader__.load({
           ),
         ),
         renderDeleteDialog(),
-        renderDataPanel(),
         renderHoverCard(),
         renderMenu(),
         renderViewMenu(),
@@ -8995,6 +7721,45 @@ window.__ModuleLoader__.load({
         }, SessionGroupsSettings));
 
         const modeStore = createViewModeStore();
+
+        let dataProvider = null;
+        const dataProviderListeners = new Set();
+        const notifyDataProvider = () => {
+          for (const listener of [...dataProviderListeners]) {
+            try { listener(); } catch { /* keep the menu alive */ }
+          }
+        };
+        const dataProviderStore = {
+          getSnapshot: () => dataProvider,
+          subscribe: (listener) => {
+            dataProviderListeners.add(listener);
+            return () => dataProviderListeners.delete(listener);
+          },
+        };
+        ctx.provide('sessionGroupsUI', {
+          protocol: 1,
+          registerDataProvider: (provider) => {
+            if (!provider || provider.protocol !== 1 || typeof provider.open !== 'function') {
+              throw new Error('sessionGroupsUI: invalid data provider');
+            }
+            if (dataProvider !== null && dataProvider !== provider) {
+              throw new Error('sessionGroupsUI: a data provider is already registered');
+            }
+            dataProvider = provider;
+            notifyDataProvider();
+            let disposed = false;
+            return () => {
+              if (disposed) return;
+              disposed = true;
+              if (dataProvider === provider) {
+                dataProvider = null;
+                notifyDataProvider();
+              }
+            };
+          },
+          getDataProvider: () => dataProvider,
+          subscribe: dataProviderStore.subscribe,
+        });
         const scheduleCatalog = createScheduleCatalogSource(ctx);
         ctx.effect(() => {
           const access = ctx.remoteAccess;
@@ -9006,6 +7771,7 @@ window.__ModuleLoader__.load({
 
         const injected = () => ({
           scheduleCatalog,
+          dataProviderStore,
           setGroupedMode: (next) => modeStore.set(next),
           openSession: (sessionId) => ctx.uiWorkspace.openSession(sessionId),
           startSession: (workspaceId) => ctx.uiWorkspace.startSession(workspaceId),
@@ -9059,6 +7825,7 @@ window.__ModuleLoader__.load({
         let browserDispose = null;
         const uninstallBrowser = () => {
           if (browserDispose === null) return;
+          try { dataProvider?.close?.('sidebar-unmounted'); } catch { /* extension cleanup is best-effort */ }
           browserDispose();
           browserDispose = null;
         };

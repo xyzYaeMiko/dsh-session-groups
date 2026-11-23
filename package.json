@@ -1,9 +1,9 @@
 {
   "name": "dsh-session-groups",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "type": "module",
-  "description": "DSH Web/Desktop plugin: Edge-style session groups with workspace tree, single list, recursive sorting, dark-mode palettes, subagent browsing, session data panels with peak/off-peak cost, session deletion, and an approval-gated agent organization tool.",
+  "description": "DSH Web/Desktop plugin: Edge-style session groups with workspace tree, single list, recursive sorting, dark-mode palettes, subagent browsing, session deletion, and an approval-gated agent organization tool. The data panel is an optional extension.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
