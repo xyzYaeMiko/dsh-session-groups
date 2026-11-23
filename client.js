@@ -7743,7 +7743,7 @@ window.__ModuleLoader__.load({
               throw new Error('sessionGroupsUI: invalid data provider');
             }
             if (dataProvider !== null && dataProvider !== provider) {
-              throw new Error('sessionGroupsUI: a data provider is already registered');
+              try { dataProvider.close?.('provider-replaced'); } catch { /* replace best-effort */ }
             }
             dataProvider = provider;
             notifyDataProvider();
